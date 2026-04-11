@@ -13,6 +13,9 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
+# Относительно PROJECT_ROOT; в CLI укажите `--las` для другой скважины.
+DEFAULT_LAS_RELPATH = "data/las/skv621.las"
+
 # Три «стандартные» кривые; четвёртая подбирается автоматически, если не задана явно.
 STANDARD_PROP_TRIPLE = ("POTA", "THOR", "RHOB")
 FOURTH_PROP_CANDIDATES = (
@@ -75,7 +78,7 @@ def load_mkm_from_las(
     litho_mnem: str = "LITO",
     prop_mnems: Sequence[str] | None = None,
     verbose: bool = False,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     lasdata = ls.read(las_path)
     keys = list(lasdata.keys())
     keyset = set(keys)
@@ -88,6 +91,8 @@ def load_mkm_from_las(
     props = infer_property_mnemonics(keys, prop_mnems)
     curve_order = [depth_mnem, litho_mnem, *props]
     data = lasdata.stack_curves(curve_order, sort_curves=False)
+
+    litho_raw = np.asarray(data[:, 1], dtype=float).copy()
 
     data = np.c_[data, np.ones(data.shape[0])]
     data[data[:, 1] != 1, 1] = 2
@@ -102,7 +107,7 @@ def load_mkm_from_las(
         print(f"LAS: {las_path}")
         print(f"  глубина={depth_mnem}, литология={litho_mnem}, свойства={props}")
 
-    return data, is_coll, is_glin, coll_prop, glin_prop
+    return data, is_coll, is_glin, coll_prop, glin_prop, litho_raw
 
 
 # Совместимость со старым именем
@@ -209,30 +214,55 @@ def plot_with_sign(
     )
 
 
-def save_mkm_plot(mkm_model: np.ndarray, output_png_path: Path) -> None:
+def save_mkm_plot(
+    mkm_model: np.ndarray,
+    output_png_path: Path,
+    *,
+    litho_raw: np.ndarray | None = None,
+    litho_mnem: str = "LITO",
+) -> None:
     depth = mkm_model[:, 0]
 
-    fig, axes = plt.subplots(ncols=5, figsize=(15, 15), sharex=False, sharey=True)
+    if litho_raw is not None:
+        if len(litho_raw) != len(depth):
+            raise ValueError(
+                f"litho_raw: ожидается длина {len(depth)}, получено {len(litho_raw)}"
+            )
+        ncols = 6
+        fig_w = 18
+    else:
+        ncols = 5
+        fig_w = 15
+
+    fig, axes = plt.subplots(ncols=ncols, figsize=(fig_w, 15), sharex=False, sharey=True)
 
     for ax in axes:
         ax.invert_yaxis()
 
-    plot_with_sign(axes[0], mkm_model[:, 2], depth, "blue", "red")
-    axes[0].set_title("Глина1")
+    i0 = 0
+    if litho_raw is not None:
+        axes[0].step(litho_raw, depth, where="mid", color="#5c4033", linewidth=1.2)
+        axes[0].set_xlabel(litho_mnem)
+        axes[0].set_title(f"{litho_mnem} (из LAS, без изменений)")
+        axes[0].grid(True)
+        i0 = 1
 
-    plot_with_sign(axes[1], mkm_model[:, 3], depth, "green", "darkred")
-    axes[1].set_title("Глина2")
+    plot_with_sign(axes[i0 + 0], mkm_model[:, 2], depth, "blue", "red")
+    axes[i0 + 0].set_title("Глина1")
 
-    plot_with_sign(axes[2], mkm_model[:, 4], depth, "orange", "maroon")
-    axes[2].set_title("ПШ")
+    plot_with_sign(axes[i0 + 1], mkm_model[:, 3], depth, "green", "darkred")
+    axes[i0 + 1].set_title("Глина2")
 
-    plot_with_sign(axes[3], mkm_model[:, 5], depth, "purple", "crimson")
-    axes[3].set_title("Кварц")
+    plot_with_sign(axes[i0 + 2], mkm_model[:, 4], depth, "orange", "maroon")
+    axes[i0 + 2].set_title("ПШ")
 
-    plot_with_sign(axes[4], mkm_model[:, 6], depth, "black", "firebrick")
-    axes[4].set_title("Пористость")
+    plot_with_sign(axes[i0 + 3], mkm_model[:, 5], depth, "purple", "crimson")
+    axes[i0 + 3].set_title("Кварц")
 
-    for ax in axes:
+    plot_with_sign(axes[i0 + 4], mkm_model[:, 6], depth, "black", "firebrick")
+    axes[i0 + 4].set_title("Пористость")
+
+    for ax in axes[i0:]:
         ax.legend()
         ax.grid(True)
 

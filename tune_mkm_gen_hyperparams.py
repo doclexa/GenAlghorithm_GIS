@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from mkm_core import (
+    DEFAULT_LAS_RELPATH,
     PROJECT_ROOT,
     calc_mkm_model,
     calc_metrics_mkm,
@@ -104,7 +105,11 @@ def parse_args() -> argparse.Namespace:
             "которая быстрее target_time и качественнее baseline."
         )
     )
-    parser.add_argument("--las", default="data/las/inp.las", help="Путь к .las.")
+    parser.add_argument(
+        "--las",
+        default=DEFAULT_LAS_RELPATH,
+        help="Путь к .las (по умолчанию основная скважина проекта).",
+    )
     parser.add_argument("--a-min-coll", default="config/a_min_coll.in", help="Путь к a_min_coll.in.")
     parser.add_argument("--a-max-coll", default="config/a_max_coll.in", help="Путь к a_max_coll.in.")
     parser.add_argument("--a-min-glin", default="config/a_min_glin.in", help="Путь к a_min_glin.in.")
@@ -177,7 +182,7 @@ def main() -> None:
     a_min_glin_path = resolve_path(args.a_min_glin, PROJECT_ROOT)
     a_max_glin_path = resolve_path(args.a_max_glin, PROJECT_ROOT)
 
-    data, is_coll, is_glin, coll_prop, glin_prop = load_data_from_las(las_path)
+    data, is_coll, is_glin, coll_prop, glin_prop, litho_raw = load_data_from_las(las_path)
     if len(coll_prop) == 0:
         raise ValueError("В данных нет строк с LITO == 1 (коллекторы).")
     if len(glin_prop) == 0:
@@ -354,7 +359,7 @@ def main() -> None:
     best_glin_path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(best_coll_path, best_result.coll_matrix, fmt="%.12g")
     np.savetxt(best_glin_path, best_result.glin_matrix, fmt="%.12g")
-    save_mkm_plot(best_mkm, best_plot_path)
+    save_mkm_plot(best_mkm, best_plot_path, litho_raw=litho_raw, litho_mnem="LITO")
 
     if args.save_best_mkm:
         mkm_path = resolve_path(args.save_best_mkm, PROJECT_ROOT)

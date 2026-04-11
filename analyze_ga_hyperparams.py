@@ -14,7 +14,11 @@ import numpy as np
 from deap import base, creator, tools
 
 from mkm_core import (
+    DEFAULT_LAS_RELPATH,
     PROJECT_ROOT,
+    calc_mkm_model,
+    calc_metrics_mkm,
+    calc_quality_score,
     flatten_bounds,
     load_mkm_from_las as load_data_from_las,
     resolve_path,
@@ -45,6 +49,10 @@ class CurveResult:
     final_best_share: float
     global_best_share: float
     global_best_count: int
+    quality_score: float
+    mkm_negative_share: float
+    mkm_glin_bad_share: float
+    mkm_coll_bad_share: float
 
 
 def parse_int_list(csv_values: str) -> list[int]:
@@ -59,6 +67,37 @@ def parse_float_list(csv_values: str) -> list[float]:
     if not values:
         raise ValueError("Список вещественных значений пуст.")
     return [float(v) for v in values]
+
+
+def mkm_quality_from_flat_individual(
+    individual: list[float],
+    data: np.ndarray,
+    is_coll: np.ndarray,
+    is_glin: np.ndarray,
+    coll_prop: np.ndarray,
+    glin_prop: np.ndarray,
+    w_negative: float,
+    w_glin: float,
+    w_coll: float,
+) -> tuple[float, float, float, float]:
+    """Итоговый Q и компоненты метрик МКМ по 50 генам (25 COLL + 25 GLIN)."""
+    a_coll = np.array(individual[:25], dtype=float).reshape(5, 5)
+    a_glin = np.array(individual[25:], dtype=float).reshape(5, 5)
+    try:
+        mkm = calc_mkm_model(
+            data=data,
+            is_coll=is_coll,
+            is_glin=is_glin,
+            coll_prop=coll_prop,
+            glin_prop=glin_prop,
+            a_coll=a_coll,
+            a_glin=a_glin,
+        )
+        neg_s, gb, cb = calc_metrics_mkm(mkm)
+        q = calc_quality_score(neg_s, gb, cb, w_negative, w_glin, w_coll)
+        return float(q), float(neg_s), float(gb), float(cb)
+    except np.linalg.LinAlgError:
+        return float("nan"), float("nan"), float("nan"), float("nan")
 
 
 def ensure_deap_classes() -> None:
@@ -140,7 +179,13 @@ def run_ga_collect_history(
     upper: np.ndarray,
     coll_prop: np.ndarray,
     glin_prop: np.ndarray,
-) -> tuple[list[float], float]:
+    data: np.ndarray,
+    is_coll: np.ndarray,
+    is_glin: np.ndarray,
+    w_negative: float,
+    w_glin: float,
+    w_coll: float,
+) -> tuple[list[float], float, list[float]]:
     random.seed(config.seed)
     np.random.seed(config.seed)
 
@@ -157,14 +202,16 @@ def run_ga_collect_history(
         tournsize=config.tournsize,
     )
 
-    def run_loop() -> list[float]:
+    def run_loop() -> tuple[list[float], list[float]]:
         population = toolbox.population(n=config.population_size)
         history: list[float] = []
+        hall = tools.HallOfFame(1)
 
         invalid_ind = [ind for ind in population if not ind.fitness.valid]
         fitnesses = list(toolbox.map(toolbox.evaluate, invalid_ind))
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
+        hall.update(population)
         history.append(float(min(ind.fitness.values[0] for ind in population)))
 
         for _ in range(1, config.ngen + 1):
@@ -188,19 +235,20 @@ def run_ga_collect_history(
                 ind.fitness.values = fit
 
             population[:] = offspring
+            hall.update(population)
             history.append(float(min(ind.fitness.values[0] for ind in population)))
 
-        return history
+        return history, list(hall[0])
 
     started = time.perf_counter()
     if config.n_jobs > 1:
         with mp.Pool(processes=config.n_jobs) as pool:
             toolbox.register("map", pool.map)
-            history = run_loop()
+            history, best_flat = run_loop()
     else:
-        history = run_loop()
+        history, best_flat = run_loop()
     elapsed = time.perf_counter() - started
-    return history, elapsed
+    return history, elapsed, best_flat
 
 
 def run_sweep_for_parameter(
@@ -211,6 +259,12 @@ def run_sweep_for_parameter(
     upper: np.ndarray,
     coll_prop: np.ndarray,
     glin_prop: np.ndarray,
+    data: np.ndarray,
+    is_coll: np.ndarray,
+    is_glin: np.ndarray,
+    w_negative: float,
+    w_glin: float,
+    w_coll: float,
     total_component_values: int,
     seed_offset: int,
 ) -> list[CurveResult]:
@@ -225,19 +279,38 @@ def run_sweep_for_parameter(
             run_config = replace(base_config, mutpb=float(value), seed=run_seed)
         elif parameter_name == "tournsize":
             run_config = replace(base_config, tournsize=int(value), seed=run_seed)
+        elif parameter_name == "indpb":
+            run_config = replace(base_config, indpb=float(value), seed=run_seed)
         else:
             raise ValueError(f"Неизвестный параметр: {parameter_name}")
 
-        history, elapsed = run_ga_collect_history(
+        history, elapsed, best_flat = run_ga_collect_history(
             config=run_config,
             lower=lower,
             upper=upper,
             coll_prop=coll_prop,
             glin_prop=glin_prop,
+            data=data,
+            is_coll=is_coll,
+            is_glin=is_glin,
+            w_negative=w_negative,
+            w_glin=w_glin,
+            w_coll=w_coll,
         )
         final_share = float(history[-1])
         global_best = float(min(history))
         best_count = int(round(global_best * total_component_values))
+        q_mkm, neg_mkm, gb_mkm, cb_mkm = mkm_quality_from_flat_individual(
+            best_flat,
+            data=data,
+            is_coll=is_coll,
+            is_glin=is_glin,
+            coll_prop=coll_prop,
+            glin_prop=glin_prop,
+            w_negative=w_negative,
+            w_glin=w_glin,
+            w_coll=w_coll,
+        )
 
         result = CurveResult(
             parameter_name=parameter_name,
@@ -247,12 +320,17 @@ def run_sweep_for_parameter(
             final_best_share=final_share,
             global_best_share=global_best,
             global_best_count=best_count,
+            quality_score=q_mkm,
+            mkm_negative_share=neg_mkm,
+            mkm_glin_bad_share=gb_mkm,
+            mkm_coll_bad_share=cb_mkm,
         )
         results.append(result)
 
         print(
             f"[{parameter_name}] value={value} | time={elapsed:.3f}s | "
-            f"global_best_share={global_best:.8f} (~{best_count} отриц. значений)"
+            f"global_best_share={global_best:.8f} (~{best_count} отриц.) | "
+            f"Q_mkm={q_mkm:.8f}"
         )
     return results
 
@@ -261,6 +339,7 @@ def save_parameter_plot(
     parameter_name: str,
     curves: list[CurveResult],
     output_path: Path,
+    ngen: int,
 ) -> None:
     fig, ax = plt.subplots(figsize=(12, 7))
 
@@ -287,11 +366,30 @@ def save_parameter_plot(
             else f"{curve.parameter_value:.3g}"
         )
         speed_parts.append(f"{parameter_name}={value_label}: {curve.elapsed_sec:.2f}s")
-    speed_text = "Скорость 200 поколений: " + " | ".join(speed_parts)
+    speed_text = f"Скорость ({ngen} покол.): " + " | ".join(speed_parts)
     fig.text(0.5, 0.02, speed_text, ha="center", va="bottom", fontsize=10, wrap=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout(rect=[0, 0.08, 1, 1])
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def save_parameter_q_plot(
+    parameter_name: str,
+    curves: list[CurveResult],
+    output_path: Path,
+) -> None:
+    fig, ax = plt.subplots(figsize=(9, 5))
+    xs = [c.parameter_value for c in curves]
+    ys = [c.quality_score for c in curves]
+    ax.plot(xs, ys, "o-", color="#8e44ad", linewidth=2, markersize=8)
+    ax.set_xlabel(parameter_name)
+    ax.set_ylabel("Q (calc_quality_score по лучшей особи)")
+    ax.set_title(f"Итоговое Q МКМ vs {parameter_name}")
+    ax.grid(True, alpha=0.3)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
@@ -308,6 +406,10 @@ def save_summary_csv(path: Path, all_curves: list[CurveResult]) -> None:
                 "final_best_negative_share",
                 "global_best_negative_share",
                 "global_best_negative_count",
+                "quality_score_mkm",
+                "mkm_negative_share",
+                "mkm_glin_bad_share",
+                "mkm_coll_bad_share",
             ]
         )
         for curve in all_curves:
@@ -319,6 +421,10 @@ def save_summary_csv(path: Path, all_curves: list[CurveResult]) -> None:
                     f"{curve.final_best_share:.10f}",
                     f"{curve.global_best_share:.10f}",
                     curve.global_best_count,
+                    f"{curve.quality_score:.10f}",
+                    f"{curve.mkm_negative_share:.10f}",
+                    f"{curve.mkm_glin_bad_share:.10f}",
+                    f"{curve.mkm_coll_bad_share:.10f}",
                 ]
             )
 
@@ -340,7 +446,11 @@ def parse_args() -> argparse.Namespace:
             "и скорость работы на фиксированных 200 поколениях."
         )
     )
-    parser.add_argument("--las", default="data/las/inp.las", help="Путь к .las (относительно корня проекта).")
+    parser.add_argument(
+        "--las",
+        default=DEFAULT_LAS_RELPATH,
+        help="Путь к .las относительно корня проекта (другая скважина — укажите явно).",
+    )
     parser.add_argument("--a-min-coll", default="config/a_min_coll.in", help="Путь к a_min_coll.in.")
     parser.add_argument("--a-max-coll", default="config/a_max_coll.in", help="Путь к a_max_coll.in.")
     parser.add_argument("--a-min-glin", default="config/a_min_glin.in", help="Путь к a_min_glin.in.")
@@ -366,6 +476,19 @@ def parse_args() -> argparse.Namespace:
         default="outputs/ga_hyperparam_study",
         help="Каталог для графиков и таблиц (относительно корня проекта).",
     )
+    parser.add_argument("--w-negative", type=float, default=0.7, help="Вес доли отрицательных в Q МКМ.")
+    parser.add_argument("--w-glin", type=float, default=0.3, help="Вес метрики глин в Q.")
+    parser.add_argument("--w-coll", type=float, default=0.3, help="Вес метрики коллекторов в Q.")
+    parser.add_argument(
+        "--indpb-values",
+        default="0.06,0.1,0.14",
+        help="Список indpb для дополнительного прохода (через запятую). Пусто = пропустить.",
+    )
+    parser.add_argument(
+        "--skip-indpb-sweep",
+        action="store_true",
+        help="Не выполнять проход по indpb.",
+    )
     return parser.parse_args()
 
 
@@ -385,7 +508,7 @@ def main() -> None:
     a_min_glin_path = resolve_path(args.a_min_glin, PROJECT_ROOT)
     a_max_glin_path = resolve_path(args.a_max_glin, PROJECT_ROOT)
 
-    _, _, _, coll_prop, glin_prop = load_data_from_las(las_path)
+    data, is_coll, is_glin, coll_prop, glin_prop, _litho_raw = load_data_from_las(las_path)
     if len(coll_prop) == 0:
         raise ValueError("В данных нет строк с LITO == 1 (коллекторы).")
     if len(glin_prop) == 0:
@@ -427,6 +550,15 @@ def main() -> None:
 
     all_curves: list[CurveResult] = []
 
+    sweep_kw = dict(
+        data=data,
+        is_coll=is_coll,
+        is_glin=is_glin,
+        w_negative=args.w_negative,
+        w_glin=args.w_glin,
+        w_coll=args.w_coll,
+    )
+
     population_curves = run_sweep_for_parameter(
         parameter_name="population_size",
         parameter_values=population_values,
@@ -437,13 +569,16 @@ def main() -> None:
         glin_prop=glin_prop,
         total_component_values=total_component_values,
         seed_offset=1,
+        **sweep_kw,
     )
     all_curves.extend(population_curves)
     save_parameter_plot(
         parameter_name="population_size",
         curves=population_curves,
         output_path=output_dir / "ga_effect_population_size.png",
+        ngen=args.ngen,
     )
+    save_parameter_q_plot("population_size", population_curves, output_dir / "ga_effect_population_size_Q.png")
 
     cxpb_curves = run_sweep_for_parameter(
         parameter_name="cxpb",
@@ -455,13 +590,16 @@ def main() -> None:
         glin_prop=glin_prop,
         total_component_values=total_component_values,
         seed_offset=2,
+        **sweep_kw,
     )
     all_curves.extend(cxpb_curves)
     save_parameter_plot(
         parameter_name="cxpb",
         curves=cxpb_curves,
         output_path=output_dir / "ga_effect_cxpb.png",
+        ngen=args.ngen,
     )
+    save_parameter_q_plot("cxpb", cxpb_curves, output_dir / "ga_effect_cxpb_Q.png")
 
     mutpb_curves = run_sweep_for_parameter(
         parameter_name="mutpb",
@@ -473,13 +611,16 @@ def main() -> None:
         glin_prop=glin_prop,
         total_component_values=total_component_values,
         seed_offset=3,
+        **sweep_kw,
     )
     all_curves.extend(mutpb_curves)
     save_parameter_plot(
         parameter_name="mutpb",
         curves=mutpb_curves,
         output_path=output_dir / "ga_effect_mutpb.png",
+        ngen=args.ngen,
     )
+    save_parameter_q_plot("mutpb", mutpb_curves, output_dir / "ga_effect_mutpb_Q.png")
 
     tournsize_curves = run_sweep_for_parameter(
         parameter_name="tournsize",
@@ -491,23 +632,51 @@ def main() -> None:
         glin_prop=glin_prop,
         total_component_values=total_component_values,
         seed_offset=4,
+        **sweep_kw,
     )
     all_curves.extend(tournsize_curves)
     save_parameter_plot(
         parameter_name="tournsize",
         curves=tournsize_curves,
         output_path=output_dir / "ga_effect_tournsize.png",
+        ngen=args.ngen,
     )
+    save_parameter_q_plot("tournsize", tournsize_curves, output_dir / "ga_effect_tournsize_Q.png")
+
+    if not args.skip_indpb_sweep and args.indpb_values.strip():
+        indpb_vals = parse_float_list(args.indpb_values)
+        indpb_curves = run_sweep_for_parameter(
+            parameter_name="indpb",
+            parameter_values=indpb_vals,
+            base_config=base_config,
+            lower=lower,
+            upper=upper,
+            coll_prop=coll_prop,
+            glin_prop=glin_prop,
+            total_component_values=total_component_values,
+            seed_offset=5,
+            **sweep_kw,
+        )
+        all_curves.extend(indpb_curves)
+        save_parameter_plot(
+            parameter_name="indpb",
+            curves=indpb_curves,
+            output_path=output_dir / "ga_effect_indpb.png",
+            ngen=args.ngen,
+        )
+        save_parameter_q_plot("indpb", indpb_curves, output_dir / "ga_effect_indpb_Q.png")
 
     save_summary_csv(output_dir / "ga_hyperparam_study_summary.csv", all_curves)
     save_curve_points_csv(output_dir / "ga_hyperparam_study_curves.csv", all_curves)
 
     print("\nИсследование завершено.")
     print(f"Графики сохранены в: {output_dir}")
-    print(f"- {output_dir / 'ga_effect_population_size.png'}")
+    print(f"- {output_dir / 'ga_effect_population_size.png'} (+ *_Q.png по Q МКМ)")
     print(f"- {output_dir / 'ga_effect_cxpb.png'}")
     print(f"- {output_dir / 'ga_effect_mutpb.png'}")
     print(f"- {output_dir / 'ga_effect_tournsize.png'}")
+    if not args.skip_indpb_sweep and args.indpb_values.strip():
+        print(f"- {output_dir / 'ga_effect_indpb.png'}")
     print(f"Сводная таблица: {output_dir / 'ga_hyperparam_study_summary.csv'}")
     print(f"Точки кривых: {output_dir / 'ga_hyperparam_study_curves.csv'}")
 

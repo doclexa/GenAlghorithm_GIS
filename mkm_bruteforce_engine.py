@@ -50,6 +50,7 @@ def brute_force_best_coll(
     global_start_index: int,
     global_total: int,
     max_iterations: int | None,
+    verbose: bool = True,
 ) -> tuple[np.ndarray, float, float, float, int, int]:
     grids = build_value_grids(a_min, a_max, a_k)
     total = prod(len(g) for g in grids)
@@ -71,11 +72,12 @@ def brute_force_best_coll(
             neg_share, coll_bad_share = calc_coll_metrics(matrix, coll_prop)
             score = neg_weight_scaled * neg_share + coll_weight * coll_bad_share
 
-            print(
-                f"[Итерация {global_iter}/{global_total}] [COLL] "
-                f"score={score:.8f} neg={neg_share:.8f} coll_bad={coll_bad_share:.8f} "
-                f"params={matrix_to_inline_params(matrix)}"
-            )
+            if verbose:
+                print(
+                    f"[Итерация {global_iter}/{global_total}] [COLL] "
+                    f"score={score:.8f} neg={neg_share:.8f} coll_bad={coll_bad_share:.8f} "
+                    f"params={matrix_to_inline_params(matrix)}"
+                )
 
             if score < best_score:
                 best_score = score
@@ -84,10 +86,11 @@ def brute_force_best_coll(
                 best_coll_bad = coll_bad_share
         except np.linalg.LinAlgError:
             invalid_count += 1
-            print(
-                f"[Итерация {global_iter}/{global_total}] [COLL] "
-                f"matrix_singular=True params={matrix_to_inline_params(matrix)}"
-            )
+            if verbose:
+                print(
+                    f"[Итерация {global_iter}/{global_total}] [COLL] "
+                    f"matrix_singular=True params={matrix_to_inline_params(matrix)}"
+                )
 
     if best_matrix is None:
         raise RuntimeError("Для COLL не найдено ни одной обратимой матрицы.")
@@ -105,6 +108,7 @@ def brute_force_best_glin(
     global_start_index: int,
     global_total: int,
     max_iterations: int | None,
+    verbose: bool = True,
 ) -> tuple[np.ndarray, float, float, float, int, int]:
     grids = build_value_grids(a_min, a_max, a_k)
     total = prod(len(g) for g in grids)
@@ -126,11 +130,12 @@ def brute_force_best_glin(
             neg_share, glin_bad_share = calc_glin_metrics(matrix, glin_prop)
             score = neg_weight_scaled * neg_share + glin_weight * glin_bad_share
 
-            print(
-                f"[Итерация {global_iter}/{global_total}] [GLIN] "
-                f"score={score:.8f} neg={neg_share:.8f} glin_bad={glin_bad_share:.8f} "
-                f"params={matrix_to_inline_params(matrix)}"
-            )
+            if verbose:
+                print(
+                    f"[Итерация {global_iter}/{global_total}] [GLIN] "
+                    f"score={score:.8f} neg={neg_share:.8f} glin_bad={glin_bad_share:.8f} "
+                    f"params={matrix_to_inline_params(matrix)}"
+                )
 
             if score < best_score:
                 best_score = score
@@ -139,10 +144,11 @@ def brute_force_best_glin(
                 best_glin_bad = glin_bad_share
         except np.linalg.LinAlgError:
             invalid_count += 1
-            print(
-                f"[Итерация {global_iter}/{global_total}] [GLIN] "
-                f"matrix_singular=True params={matrix_to_inline_params(matrix)}"
-            )
+            if verbose:
+                print(
+                    f"[Итерация {global_iter}/{global_total}] [GLIN] "
+                    f"matrix_singular=True params={matrix_to_inline_params(matrix)}"
+                )
 
     if best_matrix is None:
         raise RuntimeError("Для GLIN не найдено ни одной обратимой матрицы.")

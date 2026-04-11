@@ -15,6 +15,7 @@ from mkm_bruteforce_engine import (
     build_value_grids,
 )
 from mkm_core import (
+    DEFAULT_LAS_RELPATH,
     PROJECT_ROOT,
     calc_mkm_model,
     calc_metrics_mkm,
@@ -41,8 +42,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--las",
-        default="data/las/inp.las",
-        help="Путь к .las относительно корня проекта или абсолютный.",
+        default=DEFAULT_LAS_RELPATH,
+        help="Путь к .las относительно корня проекта или абсолютный (по умолчанию основная скважина проекта).",
     )
     parser.add_argument("--depth", default="DEPT", help="Мнемоника глубины.")
     parser.add_argument("--litho", default="LITO", help="Мнемоника литологии.")
@@ -67,11 +68,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plot-png", default="", help="Пусто → outputs/plots/<stem>_mkm_bf.png")
     parser.add_argument("--save-mkm", default="")
 
-    parser.add_argument("--w-negative", type=float, default=1.0)
-    parser.add_argument("--w-glin", type=float, default=1.0)
-    parser.add_argument("--w-coll", type=float, default=1.0)
+    parser.add_argument(
+        "--w-negative",
+        type=float,
+        default=0.7,
+        help="Вес доли отрицательных (как у mkm_run_ga.py для сопоставимости с GA).",
+    )
+    parser.add_argument("--w-glin", type=float, default=0.3, help="Вес метрики глин (как у GA).")
+    parser.add_argument("--w-coll", type=float, default=0.3, help="Вес метрики коллекторов (как у GA).")
     parser.add_argument("--max-iter-coll", type=int, default=0, help="0 = без ограничения.")
     parser.add_argument("--max-iter-glin", type=int, default=0, help="0 = без ограничения.")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Не печатать каждую итерацию перебора (для больших сеток).",
+    )
     return parser.parse_args()
 
 
@@ -86,7 +97,7 @@ def main() -> None:
     config_dir = resolve_path(args.config_dir, project_root)
 
     props = tuple(args.props) if args.props is not None else None
-    data, is_coll, is_glin, coll_prop, glin_prop = load_mkm_from_las(
+    data, is_coll, is_glin, coll_prop, glin_prop, litho_raw = load_mkm_from_las(
         las_path,
         depth_mnem=args.depth,
         litho_mnem=args.litho,
@@ -143,6 +154,7 @@ def main() -> None:
 
     brute_start = time.perf_counter()
 
+    verbose_bf = not args.quiet
     best_coll, best_coll_score, _, _, coll_iters, coll_invalid = brute_force_best_coll(
         coll_prop=coll_prop,
         a_min=a_min_coll,
@@ -153,6 +165,7 @@ def main() -> None:
         global_start_index=0,
         global_total=total_iterations,
         max_iterations=max_iter_coll,
+        verbose=verbose_bf,
     )
 
     best_glin, best_glin_score, _, _, glin_iters, glin_invalid = brute_force_best_glin(
@@ -165,6 +178,7 @@ def main() -> None:
         global_start_index=coll_iters,
         global_total=total_iterations,
         max_iterations=max_iter_glin,
+        verbose=verbose_bf,
     )
 
     brute_elapsed_sec = time.perf_counter() - brute_start
@@ -209,7 +223,12 @@ def main() -> None:
     np.savetxt(best_coll_path, best_coll, fmt="%.12g")
     np.savetxt(best_glin_path, best_glin, fmt="%.12g")
 
-    save_mkm_plot(best_mkm_model, plot_path)
+    save_mkm_plot(
+        best_mkm_model,
+        plot_path,
+        litho_raw=litho_raw,
+        litho_mnem=args.litho,
+    )
 
     if args.save_mkm:
         save_mkm_path = resolve_path(args.save_mkm, project_root)

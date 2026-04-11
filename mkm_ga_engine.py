@@ -82,6 +82,7 @@ class GroupGAResult:
     neg_share: float
     bad_share: float
     generations_ran: int
+    fitness_evals: int
 
 
 def build_toolbox(
@@ -265,6 +266,7 @@ def run_group_ga(
     best_score = float(best_individual.fitness.values[0])
     neg_share, bad_share = metric_fn(best_matrix, prop)
     generations_ran = int(logbook[-1]["gen"])
+    fitness_evals = int(sum(int(row["nevals"]) for row in logbook))
 
     return GroupGAResult(
         best_matrix=best_matrix,
@@ -272,6 +274,7 @@ def run_group_ga(
         neg_share=neg_share,
         bad_share=bad_share,
         generations_ran=generations_ran,
+        fitness_evals=fitness_evals,
     )
 
 

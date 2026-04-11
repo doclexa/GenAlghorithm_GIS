@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from mkm_core import (
+    DEFAULT_LAS_RELPATH,
     PROJECT_ROOT,
     calc_mkm_model,
     calc_metrics_mkm,
@@ -35,8 +36,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--las",
-        default="data/las/inp.las",
-        help="Путь к .las относительно корня проекта или абсолютный.",
+        default=DEFAULT_LAS_RELPATH,
+        help="Путь к .las относительно корня проекта или абсолютный (по умолчанию основная скважина проекта).",
     )
     parser.add_argument(
         "--depth",
@@ -110,7 +111,7 @@ def main() -> None:
     config_dir = resolve_path(args.config_dir, project_root)
 
     props = tuple(args.props) if args.props is not None else None
-    data, is_coll, is_glin, coll_prop, glin_prop = load_mkm_from_las(
+    data, is_coll, is_glin, coll_prop, glin_prop, litho_raw = load_mkm_from_las(
         las_path,
         depth_mnem=args.depth,
         litho_mnem=args.litho,
@@ -212,7 +213,12 @@ def main() -> None:
     np.savetxt(best_coll_path, coll_result.best_matrix, fmt="%.12g")
     np.savetxt(best_glin_path, glin_result.best_matrix, fmt="%.12g")
 
-    save_mkm_plot(best_mkm_model, plot_path)
+    save_mkm_plot(
+        best_mkm_model,
+        plot_path,
+        litho_raw=litho_raw,
+        litho_mnem=args.litho,
+    )
 
     if args.save_mkm:
         save_mkm_path = resolve_path(args.save_mkm, project_root)
@@ -221,6 +227,10 @@ def main() -> None:
 
     print("\nGA-оптимизация завершена.")
     print(f"Время поиска (только GA): {search_time_sec:.3f} сек")
+    print(
+        f"Оценок fitness: COLL={coll_result.fitness_evals}, GLIN={glin_result.fitness_evals}, "
+        f"всего={coll_result.fitness_evals + glin_result.fitness_evals}"
+    )
     print(
         f"Поколений отработано: COLL={coll_result.generations_ran}, "
         f"GLIN={glin_result.generations_ran}"

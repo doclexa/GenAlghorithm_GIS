@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 
 from mkm_core import (
+    DEFAULT_LAS_RELPATH,
     PROJECT_ROOT,
     calc_mkm_model,
     calc_metrics_mkm,
@@ -24,7 +25,11 @@ def parse_args() -> argparse.Namespace:
             "три метрики качества и график по пяти компонентам."
         )
     )
-    parser.add_argument("--las", default="data/las/inp.las", help="Путь к .las.")
+    parser.add_argument(
+        "--las",
+        default=DEFAULT_LAS_RELPATH,
+        help="Путь к .las (по умолчанию основная скважина проекта; иначе укажите явно).",
+    )
     parser.add_argument("--depth", default="DEPT", help="Мнемоника глубины.")
     parser.add_argument("--litho", default="LITO", help="Мнемоника литологии.")
     parser.add_argument(
@@ -61,7 +66,7 @@ def main() -> None:
     a_glin_path = resolve_path(args.a_glin, PROJECT_ROOT)
 
     props = tuple(args.props) if args.props is not None else None
-    data, is_coll, is_glin, coll_prop, glin_prop = load_mkm_from_las(
+    data, is_coll, is_glin, coll_prop, glin_prop, litho_raw = load_mkm_from_las(
         las_path,
         depth_mnem=args.depth,
         litho_mnem=args.litho,
@@ -96,7 +101,12 @@ def main() -> None:
         print(f"МКМ модель сохранена в: {save_path}")
 
     plot_path = resolve_path(args.plot_png, PROJECT_ROOT)
-    save_mkm_plot(mkm_model, plot_path)
+    save_mkm_plot(
+        mkm_model,
+        plot_path,
+        litho_raw=litho_raw,
+        litho_mnem=args.litho,
+    )
     print(f"График МКМ модели сохранен в: {plot_path}")
 
 
