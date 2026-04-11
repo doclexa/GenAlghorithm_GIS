@@ -5,21 +5,20 @@ import csv
 import random
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 
-from calc_mkm_gen import (
-    GAParams,
-    calc_metrics_mkm,
+from mkm_core import (
+    PROJECT_ROOT,
     calc_mkm_model,
+    calc_metrics_mkm,
     calc_quality_score,
-    load_data_from_las,
-    optimize_mkm_with_ga,
+    load_mkm_from_las as load_data_from_las,
     resolve_path,
     save_mkm_plot,
     validate_matrix_shape,
 )
+from mkm_ga_engine import GAParams, optimize_mkm_with_ga
 
 
 @dataclass
@@ -101,15 +100,15 @@ def trial_result_to_row(result: TrialResult) -> dict[str, object]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Перебор гиперпараметров calc_mkm_gen для поиска конфигурации, "
+            "Перебор гиперпараметров GA (mkm_run_ga) для поиска конфигурации, "
             "которая быстрее target_time и качественнее baseline."
         )
     )
-    parser.add_argument("--las", default="inp.las", help="Путь к .las файлу.")
-    parser.add_argument("--a-min-coll", default="a_min_coll.in", help="Путь к a_min_coll.in.")
-    parser.add_argument("--a-max-coll", default="a_max_coll.in", help="Путь к a_max_coll.in.")
-    parser.add_argument("--a-min-glin", default="a_min_glin.in", help="Путь к a_min_glin.in.")
-    parser.add_argument("--a-max-glin", default="a_max_glin.in", help="Путь к a_max_glin.in.")
+    parser.add_argument("--las", default="data/las/inp.las", help="Путь к .las.")
+    parser.add_argument("--a-min-coll", default="config/a_min_coll.in", help="Путь к a_min_coll.in.")
+    parser.add_argument("--a-max-coll", default="config/a_max_coll.in", help="Путь к a_max_coll.in.")
+    parser.add_argument("--a-min-glin", default="config/a_min_glin.in", help="Путь к a_min_glin.in.")
+    parser.add_argument("--a-max-glin", default="config/a_max_glin.in", help="Путь к a_max_glin.in.")
 
     parser.add_argument("--trials", type=int, default=16, help="Число trial-ов гиперпараметров.")
     parser.add_argument("--seed", type=int, default=2026, help="Seed тюнера.")
@@ -133,22 +132,22 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--report-csv",
-        default="mkm_gen_tuning_report.csv",
+        default="outputs/mkm_gen_tuning_report.csv",
         help="Куда сохранить таблицу trial-ов.",
     )
     parser.add_argument(
         "--best-coll-out",
-        default="best_matrix_coll_gen_tuned.out",
+        default="outputs/matrices/best_matrix_coll_gen_tuned.out",
         help="Куда сохранить лучшую матрицу коллектора.",
     )
     parser.add_argument(
         "--best-glin-out",
-        default="best_matrix_glin_gen_tuned.out",
+        default="outputs/matrices/best_matrix_glin_gen_tuned.out",
         help="Куда сохранить лучшую матрицу глины.",
     )
     parser.add_argument(
         "--best-plot-png",
-        default="mkm_gen_tuned_best_plot.png",
+        default="outputs/plots/mkm_gen_tuned_best_plot.png",
         help="Куда сохранить график лучшей МКМ-модели.",
     )
     parser.add_argument(
@@ -161,7 +160,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    script_dir = Path(__file__).resolve().parent
 
     rng = random.Random(args.seed)
     baseline_q = calc_quality_score(
@@ -173,11 +171,11 @@ def main() -> None:
         w_coll=args.w_coll,
     )
 
-    las_path = resolve_path(args.las, script_dir)
-    a_min_coll_path = resolve_path(args.a_min_coll, script_dir)
-    a_max_coll_path = resolve_path(args.a_max_coll, script_dir)
-    a_min_glin_path = resolve_path(args.a_min_glin, script_dir)
-    a_max_glin_path = resolve_path(args.a_max_glin, script_dir)
+    las_path = resolve_path(args.las, PROJECT_ROOT)
+    a_min_coll_path = resolve_path(args.a_min_coll, PROJECT_ROOT)
+    a_max_coll_path = resolve_path(args.a_max_coll, PROJECT_ROOT)
+    a_min_glin_path = resolve_path(args.a_min_glin, PROJECT_ROOT)
+    a_max_glin_path = resolve_path(args.a_max_glin, PROJECT_ROOT)
 
     data, is_coll, is_glin, coll_prop, glin_prop = load_data_from_las(las_path)
     if len(coll_prop) == 0:
@@ -330,7 +328,7 @@ def main() -> None:
     )
     best_result = sorted_results[0]
 
-    report_path = resolve_path(args.report_csv, script_dir)
+    report_path = resolve_path(args.report_csv, PROJECT_ROOT)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w", newline="", encoding="utf-8") as f:
         fieldnames = list(trial_result_to_row(best_result).keys())
@@ -349,9 +347,9 @@ def main() -> None:
         a_glin=best_result.glin_matrix,
     )
 
-    best_coll_path = resolve_path(args.best_coll_out, script_dir)
-    best_glin_path = resolve_path(args.best_glin_out, script_dir)
-    best_plot_path = resolve_path(args.best_plot_png, script_dir)
+    best_coll_path = resolve_path(args.best_coll_out, PROJECT_ROOT)
+    best_glin_path = resolve_path(args.best_glin_out, PROJECT_ROOT)
+    best_plot_path = resolve_path(args.best_plot_png, PROJECT_ROOT)
     best_coll_path.parent.mkdir(parents=True, exist_ok=True)
     best_glin_path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(best_coll_path, best_result.coll_matrix, fmt="%.12g")
@@ -359,7 +357,7 @@ def main() -> None:
     save_mkm_plot(best_mkm, best_plot_path)
 
     if args.save_best_mkm:
-        mkm_path = resolve_path(args.save_best_mkm, script_dir)
+        mkm_path = resolve_path(args.save_best_mkm, PROJECT_ROOT)
         np.save(mkm_path, best_mkm)
         print(f"Лучшая МКМ-модель сохранена в: {mkm_path}")
 
