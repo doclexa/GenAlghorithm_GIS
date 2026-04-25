@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import lasio as ls
@@ -28,6 +29,22 @@ FOURTH_PROP_CANDIDATES = (
     "GR",
     "CNP",
 )
+
+
+@dataclass(frozen=True)
+class LithotypeInterval:
+    interval_id: int
+    lithotype: int
+    start_idx: int
+    end_idx: int
+    depth_start: float
+    depth_end: float
+    row_indices: np.ndarray
+    prop: np.ndarray
+
+    @property
+    def size(self) -> int:
+        return int(len(self.row_indices))
 
 
 def resolve_path(path_value: str | Path, base_dir: Path | None = None) -> Path:
@@ -135,6 +152,61 @@ def calc_mkm_model(
     return mkm
 
 
+def split_lithotype_intervals(data: np.ndarray) -> list[LithotypeInterval]:
+    litho = np.asarray(data[:, 1], dtype=int)
+    depth = np.asarray(data[:, 0], dtype=float)
+    if data.ndim != 2 or data.shape[1] < 7:
+        raise ValueError("Ожидается массив data формата [depth, litho, 5 свойств].")
+    if len(data) == 0:
+        return []
+
+    intervals: list[LithotypeInterval] = []
+    start_idx = 0
+    current_litho = int(litho[0])
+
+    for idx in range(1, len(data) + 1):
+        is_boundary = idx == len(data) or int(litho[idx]) != current_litho
+        if not is_boundary:
+            continue
+
+        row_indices = np.arange(start_idx, idx, dtype=int)
+        intervals.append(
+            LithotypeInterval(
+                interval_id=len(intervals),
+                lithotype=current_litho,
+                start_idx=start_idx,
+                end_idx=idx,
+                depth_start=float(depth[start_idx]),
+                depth_end=float(depth[idx - 1]),
+                row_indices=row_indices,
+                prop=np.asarray(data[start_idx:idx, 2:], dtype=float),
+            )
+        )
+
+        if idx < len(data):
+            start_idx = idx
+            current_litho = int(litho[idx])
+
+    return intervals
+
+
+def calc_mkm_model_by_intervals(
+    data: np.ndarray,
+    intervals: Sequence[LithotypeInterval],
+    interval_matrices: dict[int, np.ndarray],
+) -> np.ndarray:
+    mkm = np.zeros_like(data)
+    for interval in intervals:
+        matrix = interval_matrices.get(interval.interval_id)
+        if matrix is None:
+            raise KeyError(f"Не найдена матрица для интервала {interval.interval_id}.")
+        inv_matrix = np.linalg.inv(matrix)
+        mkm_interval = interval.prop @ inv_matrix
+        rows = interval.row_indices
+        mkm[rows, :] = np.hstack((data[rows, :2], mkm_interval))
+    return mkm
+
+
 def calc_metrics_mkm(mkm_model: np.ndarray) -> tuple[float, float, float]:
     mkm_components = mkm_model[:, 2:]
 
@@ -220,6 +292,8 @@ def save_mkm_plot(
     *,
     litho_raw: np.ndarray | None = None,
     litho_mnem: str = "LITO",
+    intervals: Sequence[LithotypeInterval] | None = None,
+    summary_lines: Sequence[str] | None = None,
 ) -> None:
     depth = mkm_model[:, 0]
 
@@ -234,10 +308,8 @@ def save_mkm_plot(
         ncols = 5
         fig_w = 15
 
-    fig, axes = plt.subplots(ncols=ncols, figsize=(fig_w, 15), sharex=False, sharey=True)
-
-    for ax in axes:
-        ax.invert_yaxis()
+    extra_width = 2 if summary_lines else 0
+    fig, axes = plt.subplots(ncols=ncols, figsize=(fig_w + extra_width, 15), sharex=False, sharey=True)
 
     i0 = 0
     if litho_raw is not None:
@@ -265,10 +337,28 @@ def save_mkm_plot(
     for ax in axes[i0:]:
         ax.legend()
         ax.grid(True)
+        if intervals is not None:
+            for interval in intervals[1:]:
+                ax.axhline(interval.depth_start, color="gray", linestyle="--", linewidth=0.6, alpha=0.5)
+
+    depth_pad = max(0.5, 0.05 * float(depth.max() - depth.min()))
+    for ax in axes:
+        ax.set_ylim(float(depth.max() + depth_pad), float(depth.min() - depth_pad))
 
     fig.text(0.06, 0.5, "Глубина", va="center", rotation="vertical", fontsize=14)
+    if summary_lines:
+        fig.text(
+            0.985,
+            0.5,
+            "\n".join(summary_lines),
+            va="center",
+            ha="right",
+            fontsize=10,
+            bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
+        )
     plt.suptitle("Зависимости по глубине", fontsize=16)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    right_rect = 0.96 if summary_lines else 1.0
+    plt.tight_layout(rect=[0, 0.03, right_rect, 0.95])
 
     output_png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_png_path, dpi=200, bbox_inches="tight")

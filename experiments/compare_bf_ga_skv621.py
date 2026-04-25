@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
-"""
-Сравнение bruteforce и GA на LAS (по умолчанию skv621.las): бюджет оценок, полный Q,
-эксперимент устойчивости к сдвигу границ поиска.
-
-Запуск из корня GenAlghorithm_GIS:
-  python experiments/compare_bf_ga_skv621.py --all
-  python experiments/compare_bf_ga_skv621.py --benchmark
-  python experiments/compare_bf_ga_skv621.py --stability
-"""
+"""Сравнение интервального bruteforce и интервального GA для дипломного отчёта."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import sys
-import time
-from math import prod
 from pathlib import Path
 
 import numpy as np
@@ -25,171 +15,106 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mkm_bruteforce_engine import (  # noqa: E402
-    brute_force_best_coll,
-    brute_force_best_glin,
-    build_value_grids,
-)
 from mkm_core import (  # noqa: E402
     DEFAULT_LAS_RELPATH,
-    calc_mkm_model,
-    calc_metrics_mkm,
-    calc_quality_score,
     load_mkm_from_las,
     resolve_path,
+    split_lithotype_intervals,
     validate_k_shape,
     validate_matrix_shape,
 )
-from mkm_ga_engine import GAParams, optimize_mkm_with_ga  # noqa: E402
+from mkm_ga_engine import GAParams  # noqa: E402
+from mkm_interval_optimizer import (  # noqa: E402
+    IntervalOptimizationResult,
+    IntervalOptimizationSummary,
+    coarsen_k_matrix,
+    run_interval_bruteforce,
+    run_interval_ga,
+    write_interval_results_csv,
+)
 
 
-def translate_bounds(
-    a_min: np.ndarray,
-    a_max: np.ndarray,
-    frac: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Параллельный сдвиг бокса: a' = a + frac * (a_max - a_min) поэлементно."""
-    span = np.asarray(a_max, dtype=float) - np.asarray(a_min, dtype=float)
-    delta = frac * span
-    return np.asarray(a_min, dtype=float) + delta, np.asarray(a_max, dtype=float) + delta
-
-
-def run_ga_once(
+def _summary_to_row(
+    summary: IntervalOptimizationSummary,
     *,
-    data: np.ndarray,
-    is_coll: np.ndarray,
-    is_glin: np.ndarray,
-    coll_prop: np.ndarray,
-    glin_prop: np.ndarray,
-    a_min_coll: np.ndarray,
-    a_max_coll: np.ndarray,
-    a_min_glin: np.ndarray,
-    a_max_glin: np.ndarray,
-    w_negative: float,
-    w_glin: float,
-    w_coll: float,
-    ga_params: GAParams,
-) -> dict[str, float | int]:
-    t0 = time.perf_counter()
-    coll_r, glin_r, search_sec = optimize_mkm_with_ga(
-        coll_prop=coll_prop,
-        glin_prop=glin_prop,
-        a_min_coll=a_min_coll,
-        a_max_coll=a_max_coll,
-        a_min_glin=a_min_glin,
-        a_max_glin=a_max_glin,
-        w_negative=w_negative,
-        w_glin=w_glin,
-        w_coll=w_coll,
-        ga_params=ga_params,
-        verbose=False,
-    )
-    wall = time.perf_counter() - t0
-    mkm = calc_mkm_model(
-        data=data,
-        is_coll=is_coll,
-        is_glin=is_glin,
-        coll_prop=coll_prop,
-        glin_prop=glin_prop,
-        a_coll=coll_r.best_matrix,
-        a_glin=glin_r.best_matrix,
-    )
-    neg_s, gb, cb = calc_metrics_mkm(mkm)
-    q = calc_quality_score(neg_s, gb, cb, w_negative, w_glin, w_coll)
-    nevals = int(coll_r.fitness_evals + glin_r.fitness_evals)
+    method_label: str,
+    coarse_factor: float,
+    max_iterations: int,
+) -> dict[str, object]:
     return {
-        "Q": float(q),
-        "negative_share": float(neg_s),
-        "glin_bad_share": float(gb),
-        "coll_bad_share": float(cb),
-        "time_sec": float(search_sec),
-        "wall_sec": float(wall),
-        "ga_fitness_evals": nevals,
-        "coll_generations": int(coll_r.generations_ran),
-        "glin_generations": int(glin_r.generations_ran),
+        "method": method_label,
+        "Q": summary.quality_score,
+        "negative_share": summary.negative_share,
+        "glin_bad_share": summary.glin_bad_share,
+        "coll_bad_share": summary.coll_bad_share,
+        "time_sec": summary.total_time_sec,
+        "evals": summary.total_evals,
+        "intervals": len(summary.interval_results),
+        "invalid_count": summary.total_invalid_count,
+        "generations": summary.total_generations,
+        "coarse_factor": coarse_factor,
+        "max_iterations": max_iterations,
     }
 
 
-def run_bf_once(
+def _write_interval_comparison_csv(
+    csv_path: Path,
     *,
-    data: np.ndarray,
-    is_coll: np.ndarray,
-    is_glin: np.ndarray,
-    coll_prop: np.ndarray,
-    glin_prop: np.ndarray,
-    a_min_coll: np.ndarray,
-    a_max_coll: np.ndarray,
-    a_k_coll: np.ndarray,
-    a_min_glin: np.ndarray,
-    a_max_glin: np.ndarray,
-    a_k_glin: np.ndarray,
-    w_negative: float,
-    w_glin: float,
-    w_coll: float,
-    max_iter_coll: int | None,
-    max_iter_glin: int | None,
-) -> dict[str, float | int]:
-    coll_ratio = len(coll_prop) / (len(coll_prop) + len(glin_prop))
-    glin_ratio = len(glin_prop) / (len(coll_prop) + len(glin_prop))
-    coll_grids = build_value_grids(a_min_coll, a_max_coll, a_k_coll)
-    glin_grids = build_value_grids(a_min_glin, a_max_glin, a_k_glin)
-    total_coll = prod(len(g) for g in coll_grids)
-    total_glin = prod(len(g) for g in glin_grids)
-    total_coll_e = min(total_coll, max_iter_coll) if max_iter_coll is not None else total_coll
-    total_glin_e = min(total_glin, max_iter_glin) if max_iter_glin is not None else total_glin
-    total_iters = total_coll_e + total_glin_e
-
-    t0 = time.perf_counter()
-    best_coll, _, _, _, coll_iters, _ = brute_force_best_coll(
-        coll_prop=coll_prop,
-        a_min=a_min_coll,
-        a_max=a_max_coll,
-        a_k=a_k_coll,
-        neg_weight_scaled=w_negative * coll_ratio,
-        coll_weight=w_coll,
-        global_start_index=0,
-        global_total=total_iters,
-        max_iterations=max_iter_coll,
-        verbose=False,
-    )
-    best_glin, _, _, _, glin_iters, _ = brute_force_best_glin(
-        glin_prop=glin_prop,
-        a_min=a_min_glin,
-        a_max=a_max_glin,
-        a_k=a_k_glin,
-        neg_weight_scaled=w_negative * glin_ratio,
-        glin_weight=w_glin,
-        global_start_index=coll_iters,
-        global_total=total_iters,
-        max_iterations=max_iter_glin,
-        verbose=False,
-    )
-    elapsed = time.perf_counter() - t0
-    mkm = calc_mkm_model(
-        data=data,
-        is_coll=is_coll,
-        is_glin=is_glin,
-        coll_prop=coll_prop,
-        glin_prop=glin_prop,
-        a_coll=best_coll,
-        a_glin=best_glin,
-    )
-    neg_s, gb, cb = calc_metrics_mkm(mkm)
-    q = calc_quality_score(neg_s, gb, cb, w_negative, w_glin, w_coll)
-    return {
-        "Q": float(q),
-        "negative_share": float(neg_s),
-        "glin_bad_share": float(gb),
-        "coll_bad_share": float(cb),
-        "time_sec": float(elapsed),
-        "bf_evals": int(coll_iters + glin_iters),
-        "coll_iters": int(coll_iters),
-        "glin_iters": int(glin_iters),
-    }
+    ga_results: list[IntervalOptimizationResult],
+    bf_results: list[IntervalOptimizationResult],
+    bf_label: str,
+) -> None:
+    ga_by_id = {item.interval_id: item for item in ga_results}
+    bf_by_id = {item.interval_id: item for item in bf_results}
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as file_obj:
+        writer = csv.DictWriter(
+            file_obj,
+            fieldnames=[
+                "interval_id",
+                "lithotype",
+                "depth_start",
+                "depth_end",
+                "sample_count",
+                "ga_local_score",
+                "bf_local_score",
+                "delta_local_score",
+                "ga_negative_share",
+                "bf_negative_share",
+                "delta_negative_share",
+                "ga_bad_share",
+                "bf_bad_share",
+                "delta_bad_share",
+                "bf_label",
+            ],
+        )
+        writer.writeheader()
+        for interval_id in sorted(ga_by_id):
+            ga_item = ga_by_id[interval_id]
+            bf_item = bf_by_id[interval_id]
+            writer.writerow(
+                {
+                    "interval_id": interval_id,
+                    "lithotype": ga_item.lithotype,
+                    "depth_start": ga_item.depth_start,
+                    "depth_end": ga_item.depth_end,
+                    "sample_count": ga_item.sample_count,
+                    "ga_local_score": ga_item.local_score,
+                    "bf_local_score": bf_item.local_score,
+                    "delta_local_score": bf_item.local_score - ga_item.local_score,
+                    "ga_negative_share": ga_item.negative_share,
+                    "bf_negative_share": bf_item.negative_share,
+                    "delta_negative_share": bf_item.negative_share - ga_item.negative_share,
+                    "ga_bad_share": ga_item.bad_share,
+                    "bf_bad_share": bf_item.bad_share,
+                    "delta_bad_share": bf_item.bad_share - ga_item.bad_share,
+                    "bf_label": bf_label,
+                }
+            )
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="BF vs GA: бенчмарк и устойчивость (skv621).")
+    p = argparse.ArgumentParser(description="Интервальный BF vs GA: время, качество и операции.")
     p.add_argument(
         "--las",
         default=DEFAULT_LAS_RELPATH,
@@ -197,18 +122,20 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--config-dir", default="config")
     p.add_argument("--output-dir", default="outputs/experiments/skv621_bf_ga")
-    p.add_argument("--w-negative", type=float, default=0.7)
-    p.add_argument("--w-glin", type=float, default=0.3)
-    p.add_argument("--w-coll", type=float, default=0.3)
-    p.add_argument("--benchmark", action="store_true", help="Полный BF, GA, BF с бюджетом оценок как у GA")
-    p.add_argument("--stability", action="store_true", help="Сдвиг границ: разброс Q BF vs GA")
-    p.add_argument("--all", action="store_true", help="benchmark + stability")
+    p.add_argument("--w-negative", type=float, default=0.8)
+    p.add_argument("--w-glin", type=float, default=0.1)
+    p.add_argument("--w-coll", type=float, default=0.1)
     p.add_argument(
-        "--shift-fracs",
-        default="-0.04,-0.02,0,0.02,0.04",
-        help="Доли сдвига границ (через запятую) для stability.",
+        "--coarse-factors",
+        default="2,3,4,6",
+        help="Список коэффициентов огрубления BF через запятую.",
     )
-    p.add_argument("--seeds", default="42,43,44", help="Сиды GA для stability (через запятую).")
+    p.add_argument(
+        "--coarse-max-iterations",
+        type=int,
+        default=0,
+        help="Дополнительный лимит итераций на интервал для coarse BF (0 = без лимита).",
+    )
     p.add_argument("--population-size", type=int, default=220)
     p.add_argument("--ngen", type=int, default=110)
     p.add_argument("--cxpb", type=float, default=0.6)
@@ -217,39 +144,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--tournsize", type=int, default=3)
     p.add_argument("--patience", type=int, default=25)
     p.add_argument("--min-delta", type=float, default=1e-7)
-    p.add_argument(
-        "--stability-max-iter-coll",
-        type=int,
-        default=0,
-        help="В режиме --stability: лимит итераций COLL (0 = полный перебор по сетке).",
-    )
-    p.add_argument(
-        "--stability-max-iter-glin",
-        type=int,
-        default=0,
-        help="В режиме --stability: лимит итераций GLIN (0 = полный перебор).",
-    )
+    p.add_argument("--seed", type=int, default=4)
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    do_bench = args.benchmark or args.all
-    do_stab = args.stability or args.all
-    if not do_bench and not do_stab:
-        print("Укажите --benchmark, --stability или --all")
-        sys.exit(1)
-
     las_path = resolve_path(args.las, PROJECT_ROOT)
     config_dir = resolve_path(args.config_dir, PROJECT_ROOT)
     out_dir = resolve_path(args.output_dir, PROJECT_ROOT)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    data, is_coll, is_glin, coll_prop, glin_prop, _litho_raw = load_mkm_from_las(
+    data, _is_coll, _is_glin, _coll_prop, _glin_prop, _litho_raw = load_mkm_from_las(
         las_path, verbose=True
     )
-    if len(coll_prop) == 0 or len(glin_prop) == 0:
-        raise ValueError("Нужны и коллекторы, и глины в LAS.")
+    intervals = split_lithotype_intervals(data)
 
     a_min_coll0 = np.loadtxt(config_dir / "a_min_coll.in")
     a_max_coll0 = np.loadtxt(config_dir / "a_max_coll.in")
@@ -267,11 +176,6 @@ def main() -> None:
     validate_k_shape(a_k_coll, "A_k_coll")
     validate_k_shape(a_k_glin, "A_k_glin")
 
-    coll_grids = build_value_grids(a_min_coll0, a_max_coll0, a_k_coll)
-    glin_grids = build_value_grids(a_min_glin0, a_max_glin0, a_k_glin)
-    total_coll = prod(len(g) for g in coll_grids)
-    total_glin = prod(len(g) for g in glin_grids)
-
     ga_params = GAParams(
         population_size=args.population_size,
         ngen=args.ngen,
@@ -282,236 +186,182 @@ def main() -> None:
         patience=args.patience,
         min_delta=args.min_delta,
         n_jobs=1,
-        seed=42,
+        seed=args.seed,
+    )
+    print("=== Бенчмарк интервальных методов ===")
+    print(f"Интервалов литологии: {len(intervals)}")
+
+    benchmark_rows: list[dict[str, object]] = []
+
+    ga_summary = run_interval_ga(
+        data=data,
+        intervals=intervals,
+        a_min_coll=a_min_coll0,
+        a_max_coll=a_max_coll0,
+        a_min_glin=a_min_glin0,
+        a_max_glin=a_max_glin0,
+        w_negative=args.w_negative,
+        w_glin=args.w_glin,
+        w_coll=args.w_coll,
+        ga_params=ga_params,
+        verbose=False,
+    )
+    benchmark_rows.append(
+        _summary_to_row(
+            ga_summary,
+            method_label="ga_interval",
+            coarse_factor=1.0,
+            max_iterations=0,
+        )
+    )
+    print(
+        f"GA: Q={ga_summary.quality_score:.6f}, "
+        f"time={ga_summary.total_time_sec:.2f}s, evals={ga_summary.total_evals}"
+    )
+    write_interval_results_csv(ga_summary.interval_results, out_dir / "intervals_ga.csv")
+
+    bf_full_summary = run_interval_bruteforce(
+        data=data,
+        intervals=intervals,
+        a_min_coll=a_min_coll0,
+        a_max_coll=a_max_coll0,
+        a_k_coll=a_k_coll,
+        a_min_glin=a_min_glin0,
+        a_max_glin=a_max_glin0,
+        a_k_glin=a_k_glin,
+        w_negative=args.w_negative,
+        w_glin=args.w_glin,
+        w_coll=args.w_coll,
+        max_iterations=None,
+        verbose=False,
+    )
+    benchmark_rows.append(
+        _summary_to_row(
+            bf_full_summary,
+            method_label="bf_full_interval",
+            coarse_factor=1.0,
+            max_iterations=0,
+        )
+    )
+    print(
+        f"BF full: Q={bf_full_summary.quality_score:.6f}, "
+        f"time={bf_full_summary.total_time_sec:.2f}s, evals={bf_full_summary.total_evals}"
+    )
+    write_interval_results_csv(bf_full_summary.interval_results, out_dir / "intervals_bf_full.csv")
+
+    bf_eval_time = bf_full_summary.total_time_sec / max(1, bf_full_summary.total_evals)
+    target_total_evals = int(round(ga_summary.total_time_sec / max(bf_eval_time, 1e-12)))
+    matched_budget = max(1, int(round(target_total_evals / max(1, len(intervals)))))
+    bf_budget_summary = run_interval_bruteforce(
+        data=data,
+        intervals=intervals,
+        a_min_coll=a_min_coll0,
+        a_max_coll=a_max_coll0,
+        a_k_coll=a_k_coll,
+        a_min_glin=a_min_glin0,
+        a_max_glin=a_max_glin0,
+        a_k_glin=a_k_glin,
+        w_negative=args.w_negative,
+        w_glin=args.w_glin,
+        w_coll=args.w_coll,
+        max_iterations=matched_budget,
+        verbose=False,
+    )
+    benchmark_rows.append(
+        _summary_to_row(
+            bf_budget_summary,
+            method_label="bf_budget_time_matched",
+            coarse_factor=1.0,
+            max_iterations=matched_budget,
+        )
+    )
+    print(
+        f"BF budget matched: Q={bf_budget_summary.quality_score:.6f}, "
+        f"time={bf_budget_summary.total_time_sec:.2f}s, evals={bf_budget_summary.total_evals}, "
+        f"max_iterations={matched_budget}"
+    )
+    write_interval_results_csv(bf_budget_summary.interval_results, out_dir / "intervals_bf_budget_time_matched.csv")
+
+    coarse_summaries: list[tuple[float, IntervalOptimizationSummary]] = []
+    coarse_factors = [float(item.strip()) for item in args.coarse_factors.split(",") if item.strip()]
+    coarse_limit = args.coarse_max_iterations if args.coarse_max_iterations > 0 else None
+
+    for factor in coarse_factors:
+        coarse_summary = run_interval_bruteforce(
+            data=data,
+            intervals=intervals,
+            a_min_coll=a_min_coll0,
+            a_max_coll=a_max_coll0,
+            a_k_coll=coarsen_k_matrix(a_k_coll, factor),
+            a_min_glin=a_min_glin0,
+            a_max_glin=a_max_glin0,
+            a_k_glin=coarsen_k_matrix(a_k_glin, factor),
+            w_negative=args.w_negative,
+            w_glin=args.w_glin,
+            w_coll=args.w_coll,
+            max_iterations=coarse_limit,
+            verbose=False,
+        )
+        coarse_summaries.append((factor, coarse_summary))
+        benchmark_rows.append(
+            _summary_to_row(
+                coarse_summary,
+                method_label=f"bf_coarse_f{factor:g}",
+                coarse_factor=factor,
+                max_iterations=args.coarse_max_iterations,
+            )
+        )
+        print(
+            f"BF coarse factor={factor:g}: Q={coarse_summary.quality_score:.6f}, "
+            f"time={coarse_summary.total_time_sec:.2f}s, evals={coarse_summary.total_evals}"
+        )
+        suffix = str(factor).replace(".", "_")
+        write_interval_results_csv(coarse_summary.interval_results, out_dir / f"intervals_bf_coarse_{suffix}.csv")
+
+    matched_factor, matched_summary = min(
+        coarse_summaries,
+        key=lambda item: abs(item[1].total_time_sec - ga_summary.total_time_sec),
+    )
+    print(
+        f"Наиболее близкий по времени coarse BF: factor={matched_factor:g}, "
+        f"time={matched_summary.total_time_sec:.2f}s, GA time={ga_summary.total_time_sec:.2f}s"
     )
 
-    if do_bench:
-        bench_rows: list[dict[str, object]] = []
-        print("=== Бенчмарк (границы без сдвига) ===")
-        ga_res = run_ga_once(
-            data=data,
-            is_coll=is_coll,
-            is_glin=is_glin,
-            coll_prop=coll_prop,
-            glin_prop=glin_prop,
-            a_min_coll=a_min_coll0,
-            a_max_coll=a_max_coll0,
-            a_min_glin=a_min_glin0,
-            a_max_glin=a_max_glin0,
-            w_negative=args.w_negative,
-            w_glin=args.w_glin,
-            w_coll=args.w_coll,
-            ga_params=ga_params,
-        )
-        print(f"GA: Q={ga_res['Q']:.6f}, evals={ga_res['ga_fitness_evals']}, time={ga_res['time_sec']:.2f}s")
-        bench_rows.append(
-            {
-                "method": "ga_full",
-                "shift_frac": 0.0,
-                "seed": ga_params.seed,
-                "Q": ga_res["Q"],
-                "negative_share": ga_res["negative_share"],
-                "glin_bad_share": ga_res["glin_bad_share"],
-                "coll_bad_share": ga_res["coll_bad_share"],
-                "time_sec": ga_res["time_sec"],
-                "evals": ga_res["ga_fitness_evals"],
-            }
-        )
+    _write_interval_comparison_csv(
+        out_dir / "interval_comparison_bf_full_vs_ga.csv",
+        ga_results=ga_summary.interval_results,
+        bf_results=bf_full_summary.interval_results,
+        bf_label="bf_full_interval",
+    )
+    _write_interval_comparison_csv(
+        out_dir / "interval_comparison_bf_matched_vs_ga.csv",
+        ga_results=ga_summary.interval_results,
+        bf_results=bf_budget_summary.interval_results,
+        bf_label="bf_budget_time_matched",
+    )
 
-        print("Полный bruteforce (тихий режим)...")
-        bf_full = run_bf_once(
-            data=data,
-            is_coll=is_coll,
-            is_glin=is_glin,
-            coll_prop=coll_prop,
-            glin_prop=glin_prop,
-            a_min_coll=a_min_coll0,
-            a_max_coll=a_max_coll0,
-            a_k_coll=a_k_coll,
-            a_min_glin=a_min_glin0,
-            a_max_glin=a_max_glin0,
-            a_k_glin=a_k_glin,
-            w_negative=args.w_negative,
-            w_glin=args.w_glin,
-            w_coll=args.w_coll,
-            max_iter_coll=None,
-            max_iter_glin=None,
+    bench_path = out_dir / "benchmark_skv621.csv"
+    with bench_path.open("w", newline="", encoding="utf-8") as file_obj:
+        writer = csv.DictWriter(
+            file_obj,
+            fieldnames=[
+                "method",
+                "Q",
+                "negative_share",
+                "glin_bad_share",
+                "coll_bad_share",
+                "time_sec",
+                "evals",
+                "intervals",
+                "invalid_count",
+                "generations",
+                "coarse_factor",
+                "max_iterations",
+            ],
         )
-        print(f"BF full: Q={bf_full['Q']:.6f}, evals={bf_full['bf_evals']}, time={bf_full['time_sec']:.2f}s")
-        bench_rows.append(
-            {
-                "method": "bf_full",
-                "shift_frac": 0.0,
-                "seed": "",
-                "Q": bf_full["Q"],
-                "negative_share": bf_full["negative_share"],
-                "glin_bad_share": bf_full["glin_bad_share"],
-                "coll_bad_share": bf_full["coll_bad_share"],
-                "time_sec": bf_full["time_sec"],
-                "evals": bf_full["bf_evals"],
-            }
-        )
-
-        ga_nevals = int(ga_res["ga_fitness_evals"])
-        half = max(1, ga_nevals // 2)
-        max_c = min(total_coll, half)
-        max_g = min(total_glin, max(1, ga_nevals - max_c))
-        print(f"BF с бюджетом оценок ~{max_c + max_g} (целевой бюджет GA {ga_nevals})...")
-        bf_budget = run_bf_once(
-            data=data,
-            is_coll=is_coll,
-            is_glin=is_glin,
-            coll_prop=coll_prop,
-            glin_prop=glin_prop,
-            a_min_coll=a_min_coll0,
-            a_max_coll=a_max_coll0,
-            a_k_coll=a_k_coll,
-            a_min_glin=a_min_glin0,
-            a_max_glin=a_max_glin0,
-            a_k_glin=a_k_glin,
-            w_negative=args.w_negative,
-            w_glin=args.w_glin,
-            w_coll=args.w_coll,
-            max_iter_coll=max_c,
-            max_iter_glin=max_g,
-        )
-        print(f"BF budget: Q={bf_budget['Q']:.6f}, evals={bf_budget['bf_evals']}, time={bf_budget['time_sec']:.2f}s")
-        bench_rows.append(
-            {
-                "method": "bf_budget_matched",
-                "shift_frac": 0.0,
-                "seed": "",
-                "Q": bf_budget["Q"],
-                "negative_share": bf_budget["negative_share"],
-                "glin_bad_share": bf_budget["glin_bad_share"],
-                "coll_bad_share": bf_budget["coll_bad_share"],
-                "time_sec": bf_budget["time_sec"],
-                "evals": bf_budget["bf_evals"],
-            }
-        )
-
-        bench_path = out_dir / "benchmark_skv621.csv"
-        keys = [
-            "method",
-            "shift_frac",
-            "seed",
-            "Q",
-            "negative_share",
-            "glin_bad_share",
-            "coll_bad_share",
-            "time_sec",
-            "evals",
-        ]
-        with bench_path.open("w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=keys)
-            w.writeheader()
-            w.writerows(bench_rows)
-        print(f"Сохранено: {bench_path}")
-
-    if do_stab:
-        stab_max_c = args.stability_max_iter_coll if args.stability_max_iter_coll > 0 else None
-        stab_max_g = args.stability_max_iter_glin if args.stability_max_iter_glin > 0 else None
-        bf_method_label = "bf_full" if stab_max_c is None and stab_max_g is None else "bf_capped"
-
-        fracs = [float(x.strip()) for x in args.shift_fracs.split(",") if x.strip()]
-        seeds = [int(x.strip()) for x in args.seeds.split(",") if x.strip()]
-        stab_path = out_dir / "stability_skv621.csv"
-        fieldnames = [
-            "shift_frac",
-            "method",
-            "seed",
-            "Q",
-            "negative_share",
-            "glin_bad_share",
-            "coll_bad_share",
-            "time_sec",
-            "evals",
-        ]
-        with stab_path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for frac in fracs:
-                ac_lo, ac_hi = translate_bounds(a_min_coll0, a_max_coll0, frac)
-                ag_lo, ag_hi = translate_bounds(a_min_glin0, a_max_glin0, frac)
-                print(f"=== Stability shift_frac={frac} ===")
-                bf_r = run_bf_once(
-                    data=data,
-                    is_coll=is_coll,
-                    is_glin=is_glin,
-                    coll_prop=coll_prop,
-                    glin_prop=glin_prop,
-                    a_min_coll=ac_lo,
-                    a_max_coll=ac_hi,
-                    a_k_coll=a_k_coll,
-                    a_min_glin=ag_lo,
-                    a_max_glin=ag_hi,
-                    a_k_glin=a_k_glin,
-                    w_negative=args.w_negative,
-                    w_glin=args.w_glin,
-                    w_coll=args.w_coll,
-                    max_iter_coll=stab_max_c,
-                    max_iter_glin=stab_max_g,
-                )
-                writer.writerow(
-                    {
-                        "shift_frac": frac,
-                        "method": bf_method_label,
-                        "seed": "",
-                        "Q": bf_r["Q"],
-                        "negative_share": bf_r["negative_share"],
-                        "glin_bad_share": bf_r["glin_bad_share"],
-                        "coll_bad_share": bf_r["coll_bad_share"],
-                        "time_sec": bf_r["time_sec"],
-                        "evals": bf_r["bf_evals"],
-                    }
-                )
-                f.flush()
-                print(f"  BF Q={bf_r['Q']:.6f}")
-
-                for sd in seeds:
-                    gp = GAParams(
-                        population_size=args.population_size,
-                        ngen=args.ngen,
-                        cxpb=args.cxpb,
-                        mutpb=args.mutpb,
-                        indpb=args.indpb,
-                        tournsize=args.tournsize,
-                        patience=args.patience,
-                        min_delta=args.min_delta,
-                        n_jobs=1,
-                        seed=sd,
-                    )
-                    gr = run_ga_once(
-                        data=data,
-                        is_coll=is_coll,
-                        is_glin=is_glin,
-                        coll_prop=coll_prop,
-                        glin_prop=glin_prop,
-                        a_min_coll=ac_lo,
-                        a_max_coll=ac_hi,
-                        a_min_glin=ag_lo,
-                        a_max_glin=ag_hi,
-                        w_negative=args.w_negative,
-                        w_glin=args.w_glin,
-                        w_coll=args.w_coll,
-                        ga_params=gp,
-                    )
-                    writer.writerow(
-                        {
-                            "shift_frac": frac,
-                            "method": "ga",
-                            "seed": sd,
-                            "Q": gr["Q"],
-                            "negative_share": gr["negative_share"],
-                            "glin_bad_share": gr["glin_bad_share"],
-                            "coll_bad_share": gr["coll_bad_share"],
-                            "time_sec": gr["time_sec"],
-                            "evals": gr["ga_fitness_evals"],
-                        }
-                    )
-                    f.flush()
-                    print(f"  GA seed={sd} Q={gr['Q']:.6f}")
-        print(f"Сохранено: {stab_path}")
+        writer.writeheader()
+        writer.writerows(benchmark_rows)
+    print(f"Сохранено: {bench_path}")
 
 
 if __name__ == "__main__":

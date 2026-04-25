@@ -5,7 +5,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 
 import numpy as np
@@ -76,6 +76,16 @@ class GAParams:
 
 
 @dataclass
+class GroupGenerationState:
+    generation: int
+    best_matrix: np.ndarray
+    best_score: float
+    neg_share: float
+    bad_share: float
+    cumulative_fitness_evals: int
+
+
+@dataclass
 class GroupGAResult:
     best_matrix: np.ndarray
     best_score: float
@@ -83,6 +93,19 @@ class GroupGAResult:
     bad_share: float
     generations_ran: int
     fitness_evals: int
+    generation_states: list[GroupGenerationState] = field(default_factory=list)
+
+
+def _empty_group_result() -> GroupGAResult:
+    return GroupGAResult(
+        best_matrix=np.eye(5, dtype=float),
+        best_score=0.0,
+        neg_share=0.0,
+        bad_share=0.0,
+        generations_ran=0,
+        fitness_evals=0,
+        generation_states=[],
+    )
 
 
 def build_toolbox(
@@ -135,10 +158,11 @@ def run_ea_with_patience(
     verbose: bool,
     patience: int,
     min_delta: float,
-) -> tuple[list, tools.Logbook]:
+) -> tuple[list, tools.Logbook, list[list[float]]]:
     population = toolbox.population(n=population_size)
     logbook = tools.Logbook()
     logbook.header = ["gen", "nevals"] + stats.fields
+    best_individual_history: list[list[float]] = []
 
     invalid_ind = [ind for ind in population if not ind.fitness.valid]
     fitnesses = list(toolbox.map(toolbox.evaluate, invalid_ind))
@@ -146,6 +170,7 @@ def run_ea_with_patience(
         ind.fitness.values = fit
 
     hall_of_fame.update(population)
+    best_individual_history.append(list(hall_of_fame[0]))
     record = stats.compile(population)
     logbook.record(gen=0, nevals=len(invalid_ind), **record)
     if verbose:
@@ -176,6 +201,7 @@ def run_ea_with_patience(
 
         population[:] = offspring
         hall_of_fame.update(population)
+        best_individual_history.append(list(hall_of_fame[0]))
 
         record = stats.compile(population)
         logbook.record(gen=gen, nevals=len(invalid_ind), **record)
@@ -194,7 +220,7 @@ def run_ea_with_patience(
                 print(f"Early stop: нет улучшений {patience} поколений подряд.")
             break
 
-    return population, logbook
+    return population, logbook, best_individual_history
 
 
 def run_group_ga(
@@ -235,7 +261,7 @@ def run_group_ga(
     if params.n_jobs > 1:
         with mp.Pool(processes=params.n_jobs) as pool:
             toolbox.register("map", pool.map)
-            _, logbook = run_ea_with_patience(
+            _, logbook, best_individual_history = run_ea_with_patience(
                 toolbox=toolbox,
                 population_size=params.population_size,
                 ngen=params.ngen,
@@ -248,7 +274,7 @@ def run_group_ga(
                 min_delta=params.min_delta,
             )
     else:
-        _, logbook = run_ea_with_patience(
+        _, logbook, best_individual_history = run_ea_with_patience(
             toolbox=toolbox,
             population_size=params.population_size,
             ngen=params.ngen,
@@ -267,6 +293,30 @@ def run_group_ga(
     neg_share, bad_share = metric_fn(best_matrix, prop)
     generations_ran = int(logbook[-1]["gen"])
     fitness_evals = int(sum(int(row["nevals"]) for row in logbook))
+    if len(best_individual_history) != len(logbook):
+        raise RuntimeError(
+            "Неконсистентная история GA: число лучших особей по поколениям "
+            "не совпадает с числом записей logbook."
+        )
+
+    generation_states: list[GroupGenerationState] = []
+    cumulative_evals = 0
+    for row, best_genes in zip(logbook, best_individual_history):
+        generation = int(row["gen"])
+        cumulative_evals += int(row["nevals"])
+        generation_matrix = np.array(best_genes, dtype=float).reshape(5, 5)
+        generation_score = float(evaluate_fn(best_genes)[0])
+        generation_neg_share, generation_bad_share = metric_fn(generation_matrix, prop)
+        generation_states.append(
+            GroupGenerationState(
+                generation=generation,
+                best_matrix=generation_matrix,
+                best_score=generation_score,
+                neg_share=float(generation_neg_share),
+                bad_share=float(generation_bad_share),
+                cumulative_fitness_evals=int(cumulative_evals),
+            )
+        )
 
     return GroupGAResult(
         best_matrix=best_matrix,
@@ -275,6 +325,7 @@ def run_group_ga(
         bad_share=bad_share,
         generations_ran=generations_ran,
         fitness_evals=fitness_evals,
+        generation_states=generation_states,
     )
 
 
@@ -291,8 +342,12 @@ def optimize_mkm_with_ga(
     ga_params: GAParams,
     verbose: bool = True,
 ) -> tuple[GroupGAResult, GroupGAResult, float]:
-    coll_ratio = len(coll_prop) / (len(coll_prop) + len(glin_prop))
-    glin_ratio = len(glin_prop) / (len(coll_prop) + len(glin_prop))
+    total_rows = len(coll_prop) + len(glin_prop)
+    if total_rows == 0:
+        raise ValueError("Для GA нет ни одной строки свойств.")
+
+    coll_ratio = len(coll_prop) / total_rows
+    glin_ratio = len(glin_prop) / total_rows
 
     eval_coll = partial(
         evaluate_coll_individual,
@@ -308,28 +363,35 @@ def optimize_mkm_with_ga(
     )
 
     search_start = time.perf_counter()
-    coll_result = run_group_ga(
-        group_name="COLL",
-        prop=coll_prop,
-        a_min=a_min_coll,
-        a_max=a_max_coll,
-        evaluate_fn=eval_coll,
-        metric_fn=calc_coll_metrics,
-        params=ga_params,
-        verbose=verbose,
-        seed_shift=0,
-    )
-    glin_result = run_group_ga(
-        group_name="GLIN",
-        prop=glin_prop,
-        a_min=a_min_glin,
-        a_max=a_max_glin,
-        evaluate_fn=eval_glin,
-        metric_fn=calc_glin_metrics,
-        params=ga_params,
-        verbose=verbose,
-        seed_shift=10_000,
-    )
+    if len(coll_prop) > 0:
+        coll_result = run_group_ga(
+            group_name="COLL",
+            prop=coll_prop,
+            a_min=a_min_coll,
+            a_max=a_max_coll,
+            evaluate_fn=eval_coll,
+            metric_fn=calc_coll_metrics,
+            params=ga_params,
+            verbose=verbose,
+            seed_shift=0,
+        )
+    else:
+        coll_result = _empty_group_result()
+
+    if len(glin_prop) > 0:
+        glin_result = run_group_ga(
+            group_name="GLIN",
+            prop=glin_prop,
+            a_min=a_min_glin,
+            a_max=a_max_glin,
+            evaluate_fn=eval_glin,
+            metric_fn=calc_glin_metrics,
+            params=ga_params,
+            verbose=verbose,
+            seed_shift=10_000,
+        )
+    else:
+        glin_result = _empty_group_result()
     search_time_sec = time.perf_counter() - search_start
 
     return coll_result, glin_result, search_time_sec

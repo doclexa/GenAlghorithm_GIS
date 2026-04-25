@@ -47,6 +47,8 @@ python scripts/mkm_bruteforce.py
 - `python calc_mkm_lab.py` — МКМ по фиксированным матрицам из `config/matrix_*.out`.
 - `python analyze_ga_hyperparams.py` — исследование гиперпараметров (вывод в `outputs/ga_hyperparam_study` по умолчанию; в CSV добавлены **Q МКМ** и компоненты метрик; графики `*_Q.png`; опция `--skip-indpb-sweep`). Отдельный каталог результатов:  
   `python analyze_ga_hyperparams.py --output-dir outputs/ga_hyperparam_study_skv621`
+- `python study_interval_ga_hyperparams.py --output-dir outputs/ga_hyperparam_study_skv621_run` — строгое исследование на том же интервальном GA, что `mkm_run_ga.py`: отдельные графики `Q vs generation` для `population_size`, `cxpb`, `mutpb`, `indpb`, `tournsize`, `ngen`, `patience` (по 4 значения), подпись по `tested_matrices`, CSV `ga_hyperparam_study_q_curves.csv` и `ga_hyperparam_study_q_summary.csv`. Режим только перерисовки:  
+  `python study_interval_ga_hyperparams.py --output-dir outputs/ga_hyperparam_study_skv621_run --plot-only`
 - `python tune_mkm_gen_hyperparams.py` — случайный поиск настроек GA.
 - `python experiments/compare_bf_ga_skv621.py --all` — бенчмарк GA / полный BF / BF с бюджетом оценок + устойчивость к сдвигу границ; затем `python experiments/plot_experiment_results.py --input-dir outputs/experiments/skv621_bf_ga`.
 - `python experiments/plot_tune_tradeoff.py --csv outputs/mkm_gen_tuning_report.csv` — scatter время vs Q по результатам тюнера.
