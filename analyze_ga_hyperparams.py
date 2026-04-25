@@ -21,9 +21,11 @@ from mkm_core import (
     calc_quality_score,
     flatten_bounds,
     load_mkm_from_las as load_data_from_las,
+    prepare_mkm_matrix_for_application,
     resolve_path,
     validate_matrix_shape,
 )
+from scale import scale_pos_neg_unit_sums_rows
 
 SINGULAR_PENALTY = 1.0e6
 
@@ -123,13 +125,13 @@ def evaluate_negative_share_full_model(
     a_coll = np.array(individual[:25], dtype=float).reshape(5, 5)
     a_glin = np.array(individual[25:], dtype=float).reshape(5, 5)
     try:
-        inv_coll = np.linalg.inv(a_coll)
-        inv_glin = np.linalg.inv(a_glin)
+        inv_coll = np.linalg.inv(prepare_mkm_matrix_for_application(a_coll))
+        inv_glin = np.linalg.inv(prepare_mkm_matrix_for_application(a_glin))
     except np.linalg.LinAlgError:
         return (SINGULAR_PENALTY,)
 
-    mkm_coll = coll_prop @ inv_coll
-    mkm_glin = glin_prop @ inv_glin
+    mkm_coll = scale_pos_neg_unit_sums_rows(coll_prop @ inv_coll)
+    mkm_glin = scale_pos_neg_unit_sums_rows(glin_prop @ inv_glin)
 
     negative_count = np.sum(mkm_coll < 0) + np.sum(mkm_glin < 0)
     total_count = mkm_coll.size + mkm_glin.size

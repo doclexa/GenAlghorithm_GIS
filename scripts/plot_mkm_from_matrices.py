@@ -32,6 +32,7 @@ from mkm_core import (  # noqa: E402
     load_mkm_from_las,
     plot_with_sign,
     resolve_path,
+    scale_mkm_model_for_metrics,
     validate_matrix_shape,
 )
 
@@ -159,6 +160,7 @@ def main() -> None:
     validate_matrix_shape(a_glin, "matrix_glin")
 
     mkm = calc_mkm_model(data, is_coll, is_glin, coll_prop, glin_prop, a_coll, a_glin)
+    mkm = scale_mkm_model_for_metrics(mkm)
 
     title = args.title.strip() or f"МКМ по глубине — {las_path.name}"
     plot_mkm_depth_figure(

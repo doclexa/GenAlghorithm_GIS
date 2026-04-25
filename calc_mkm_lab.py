@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import numpy as np
 
@@ -14,6 +15,7 @@ from mkm_core import (
     load_mkm_from_las,
     resolve_path,
     save_mkm_plot,
+    scale_mkm_model_for_metrics,
     validate_matrix_shape,
 )
 
@@ -58,6 +60,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_matrix_file(path: Path) -> np.ndarray:
+    try:
+        return np.loadtxt(path, comments=("M", "#"))
+    except ValueError:
+        return np.loadtxt(path, skiprows=1)
+
+
 def main() -> None:
     args = parse_args()
 
@@ -79,8 +88,8 @@ def main() -> None:
     if len(glin_prop) == 0:
         raise ValueError("В данных нет строк с LITO == 2 (глины).")
 
-    a_coll = np.loadtxt(a_coll_path)
-    a_glin = np.loadtxt(a_glin_path)
+    a_coll = load_matrix_file(a_coll_path)
+    a_glin = load_matrix_file(a_glin_path)
 
     validate_matrix_shape(a_coll, "A_coll")
     validate_matrix_shape(a_glin, "A_glin")
@@ -94,15 +103,16 @@ def main() -> None:
     print(f"2) Доля глин, где сумма глин < 30%: {glin_sum_less_30_share:.6f}")
     print(f"3) Доля коллекторов, где сумма глин > 30%: {coll_sum_more_30_share:.6f}")
 
+    mkm_plot = scale_mkm_model_for_metrics(mkm_model)
     if args.save_mkm:
         save_path = resolve_path(args.save_mkm, PROJECT_ROOT)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(save_path, mkm_model)
+        np.save(save_path, mkm_plot)
         print(f"МКМ модель сохранена в: {save_path}")
 
     plot_path = resolve_path(args.plot_png, PROJECT_ROOT)
     save_mkm_plot(
-        mkm_model,
+        mkm_plot,
         plot_path,
         litho_raw=litho_raw,
         litho_mnem=args.litho,

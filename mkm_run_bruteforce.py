@@ -14,12 +14,13 @@ from mkm_core import (
     load_mkm_from_las,
     resolve_path,
     save_mkm_plot,
+    scale_mkm_model_for_metrics,
     split_lithotype_intervals,
     validate_k_shape,
     validate_matrix_shape,
 )
 from mkm_interval_optimizer import (
-    coarsen_k_matrix,
+    apply_k_splitting,
     run_interval_bruteforce,
     save_interval_matrices_npz,
     write_interval_results_csv,
@@ -84,10 +85,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-coll", type=float, default=0.1, help="Вес метрики коллекторов.")
     parser.add_argument("--max-iterations", type=int, default=0, help="0 = без ограничения для каждого интервала.")
     parser.add_argument(
-        "--coarse-factor",
-        type=float,
-        default=1.0,
-        help="Огрубление a_k для перебора: >1 уменьшает число разбиений на интервал.",
+        "--splitting",
+        type=int,
+        choices=(2, 3, 4, 5),
+        default=5,
+        help=(
+            "Число узлов linspace для каждого параметра матрицы, где в a_k_coll / a_k_glin не 1: "
+            "все такие k заменяются на это значение (2..5). Единицы в a_k не меняются."
+        ),
     )
     parser.add_argument(
         "--quiet",
@@ -130,8 +135,8 @@ def main() -> None:
     validate_k_shape(a_k_glin, "A_k_glin")
 
     intervals = split_lithotype_intervals(data)
-    a_k_coll_eff = coarsen_k_matrix(a_k_coll, args.coarse_factor)
-    a_k_glin_eff = coarsen_k_matrix(a_k_glin, args.coarse_factor)
+    a_k_coll_eff = apply_k_splitting(a_k_coll, args.splitting)
+    a_k_glin_eff = apply_k_splitting(a_k_glin, args.splitting)
     max_iterations = args.max_iterations if args.max_iterations > 0 else None
 
     print("Старт интервального брутфорса матриц.")
@@ -144,7 +149,7 @@ def main() -> None:
         f"Весовые коэффициенты: w_negative={args.w_negative}, "
         f"w_glin={args.w_glin}, w_coll={args.w_coll}"
     )
-    print(f"Coarse factor: {args.coarse_factor}")
+    print(f"Splitting (a_k, ячейки != 1): {args.splitting}")
 
     summary = run_interval_bruteforce(
         data=data,
@@ -183,8 +188,9 @@ def main() -> None:
     save_interval_matrices_npz(summary, interval_matrices_path)
     write_interval_results_csv(summary.interval_results, interval_csv_path)
 
+    mkm_plot = scale_mkm_model_for_metrics(summary.mkm_model)
     save_mkm_plot(
-        summary.mkm_model,
+        mkm_plot,
         plot_path,
         litho_raw=litho_raw,
         litho_mnem=args.litho,
@@ -193,7 +199,7 @@ def main() -> None:
 
     if args.save_mkm:
         save_mkm_path = resolve_path(args.save_mkm, project_root)
-        np.save(save_mkm_path, summary.mkm_model)
+        np.save(save_mkm_path, mkm_plot)
         print(f"Лучшая МКМ-модель сохранена в: {save_mkm_path}")
 
     print("\nИнтервальный брутфорс завершен.")

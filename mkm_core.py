@@ -12,6 +12,8 @@ import lasio as ls
 import matplotlib.pyplot as plt
 import numpy as np
 
+from scale import scale_pos_neg_unit_sums_rows
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Относительно PROJECT_ROOT; в CLI укажите `--las` для другой скважины.
@@ -53,6 +55,31 @@ def resolve_path(path_value: str | Path, base_dir: Path | None = None) -> Path:
         return path.resolve()
     base = base_dir if base_dir is not None else PROJECT_ROOT
     return (base / path).resolve()
+
+
+def apply_prop_rhob_weighting_to_data(data: np.ndarray) -> None:
+    """
+    Для МКМ: первые два столбца четырёх кривых (колонки 2 и 3 массива data: обычно POTA, THOR)
+    умножаются на третий столбец свойств (колонка 4: RHOB). Последний столбец — константа 1, не трогаем.
+    """
+    if data.ndim != 2 or data.shape[1] < 6:
+        raise ValueError("Ожидается data с колонками [DEPT, LITO, 4 кривые, …]; минимум 6 столбцов до константы.")
+    rh = np.asarray(data[:, 4], dtype=float)
+    data[:, 2] = np.asarray(data[:, 2], dtype=float) * rh
+    data[:, 3] = np.asarray(data[:, 3], dtype=float) * rh
+
+
+def prepare_mkm_matrix_for_application(matrix: np.ndarray) -> np.ndarray:
+    """
+    Копия матрицы 5×5: первый и второй столбцы поэлементно умножаются на третий столбец (тот же смысл, что для кривых).
+    Исходный массив не меняется; на диск сохраняются «сырые» матрицы, вес применяется только при расчёте.
+    """
+    validate_matrix_shape(matrix, "matrix")
+    m = np.asarray(matrix, dtype=float, copy=True)
+    w = m[:, 2]
+    m[:, 0] *= w
+    m[:, 1] *= w
+    return m
 
 
 def infer_property_mnemonics(
@@ -114,6 +141,8 @@ def load_mkm_from_las(
     data = np.c_[data, np.ones(data.shape[0])]
     data[data[:, 1] != 1, 1] = 2
 
+    apply_prop_rhob_weighting_to_data(data)
+
     is_coll = data[:, 1] == 1
     is_glin = data[:, 1] == 2
 
@@ -140,8 +169,10 @@ def calc_mkm_model(
     a_coll: np.ndarray,
     a_glin: np.ndarray,
 ) -> np.ndarray:
-    inv_m_coll = np.linalg.inv(a_coll)
-    inv_m_glin = np.linalg.inv(a_glin)
+    a_coll_w = prepare_mkm_matrix_for_application(a_coll)
+    a_glin_w = prepare_mkm_matrix_for_application(a_glin)
+    inv_m_coll = np.linalg.inv(a_coll_w)
+    inv_m_glin = np.linalg.inv(a_glin_w)
 
     mkm_coll = coll_prop @ inv_m_coll
     mkm_glin = glin_prop @ inv_m_glin
@@ -150,6 +181,13 @@ def calc_mkm_model(
     mkm[is_coll, :] = np.hstack((data[is_coll, :2], mkm_coll))
     mkm[is_glin, :] = np.hstack((data[is_glin, :2], mkm_glin))
     return mkm
+
+
+def scale_mkm_model_for_metrics(mkm_model: np.ndarray) -> np.ndarray:
+    """Копия МКМ с построчным рескейлом пяти компонент (столбцы 2..6), как перед расчётом метрик."""
+    out = np.asarray(mkm_model, dtype=float, copy=True)
+    out[:, 2:] = scale_pos_neg_unit_sums_rows(out[:, 2:])
+    return out
 
 
 def split_lithotype_intervals(data: np.ndarray) -> list[LithotypeInterval]:
@@ -200,7 +238,8 @@ def calc_mkm_model_by_intervals(
         matrix = interval_matrices.get(interval.interval_id)
         if matrix is None:
             raise KeyError(f"Не найдена матрица для интервала {interval.interval_id}.")
-        inv_matrix = np.linalg.inv(matrix)
+        matrix_w = prepare_mkm_matrix_for_application(matrix)
+        inv_matrix = np.linalg.inv(matrix_w)
         mkm_interval = interval.prop @ inv_matrix
         rows = interval.row_indices
         mkm[rows, :] = np.hstack((data[rows, :2], mkm_interval))
@@ -208,7 +247,7 @@ def calc_mkm_model_by_intervals(
 
 
 def calc_metrics_mkm(mkm_model: np.ndarray) -> tuple[float, float, float]:
-    mkm_components = mkm_model[:, 2:]
+    mkm_components = scale_pos_neg_unit_sums_rows(np.asarray(mkm_model[:, 2:], dtype=float))
 
     negative_share = np.sum(mkm_components < 0) / mkm_components.size
 
@@ -220,12 +259,13 @@ def calc_metrics_mkm(mkm_model: np.ndarray) -> tuple[float, float, float]:
     if not np.any(is_coll):
         raise ValueError("В МКМ модели нет строк коллекторов (LITO == 1).")
 
-    glin_sum_less_30_share = (
-        mkm_components[is_glin, 0] + mkm_components[is_glin, 1] < 0.3
-    ).sum() / np.sum(is_glin)
-    coll_sum_more_30_share = (
-        mkm_components[is_coll, 0] + mkm_components[is_coll, 1] > 0.3
-    ).sum() / np.sum(is_coll)
+    g0 = np.maximum(0.0, mkm_components[is_glin, 0])
+    g1 = np.maximum(0.0, mkm_components[is_glin, 1])
+    glin_sum_less_30_share = ((g0 + g1) < 0.3).sum() / np.sum(is_glin)
+
+    c0 = np.maximum(0.0, mkm_components[is_coll, 0])
+    c1 = np.maximum(0.0, mkm_components[is_coll, 1])
+    coll_sum_more_30_share = ((c0 + c1) > 0.3).sum() / np.sum(is_coll)
 
     return (
         float(negative_share),
@@ -250,18 +290,22 @@ def calc_quality_score(
 
 
 def calc_coll_metrics(matrix: np.ndarray, coll_prop: np.ndarray) -> tuple[float, float]:
-    inv_m = np.linalg.inv(matrix)
-    mkm_coll = coll_prop @ inv_m
+    inv_m = np.linalg.inv(prepare_mkm_matrix_for_application(matrix))
+    mkm_coll = scale_pos_neg_unit_sums_rows(coll_prop @ inv_m)
     neg_share = np.sum(mkm_coll < 0) / mkm_coll.size
-    coll_sum_more_30_share = (mkm_coll[:, 0] + mkm_coll[:, 1] > 0.3).sum() / len(mkm_coll)
+    c0 = np.maximum(0.0, mkm_coll[:, 0])
+    c1 = np.maximum(0.0, mkm_coll[:, 1])
+    coll_sum_more_30_share = ((c0 + c1) > 0.3).sum() / len(mkm_coll)
     return float(neg_share), float(coll_sum_more_30_share)
 
 
 def calc_glin_metrics(matrix: np.ndarray, glin_prop: np.ndarray) -> tuple[float, float]:
-    inv_m = np.linalg.inv(matrix)
-    mkm_glin = glin_prop @ inv_m
+    inv_m = np.linalg.inv(prepare_mkm_matrix_for_application(matrix))
+    mkm_glin = scale_pos_neg_unit_sums_rows(glin_prop @ inv_m)
     neg_share = np.sum(mkm_glin < 0) / mkm_glin.size
-    glin_sum_less_30_share = (mkm_glin[:, 0] + mkm_glin[:, 1] < 0.3).sum() / len(mkm_glin)
+    g0 = np.maximum(0.0, mkm_glin[:, 0])
+    g1 = np.maximum(0.0, mkm_glin[:, 1])
+    glin_sum_less_30_share = ((g0 + g1) < 0.3).sum() / len(mkm_glin)
     return float(neg_share), float(glin_sum_less_30_share)
 
 

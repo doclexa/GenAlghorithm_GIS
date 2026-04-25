@@ -74,6 +74,18 @@ def coarsen_k_matrix(a_k: np.ndarray, factor: float) -> np.ndarray:
     return np.maximum(coarsened, 1)
 
 
+def apply_k_splitting(a_k: np.ndarray, splitting: int) -> np.ndarray:
+    """
+    Для перебора BF: все элементы a_k, не равные 1, заменяются на splitting (целое 2..5).
+    Единицы остаются (фиксированная размерность сетки по этому параметру).
+    """
+    if splitting not in (2, 3, 4, 5):
+        raise ValueError(f"splitting должен быть 2..5, получено: {splitting}")
+    out = np.asarray(a_k, dtype=int).copy()
+    out[out != 1] = splitting
+    return out
+
+
 def _interval_bad_metric_name(lithotype: int) -> str:
     return "coll_bad_share" if lithotype == 1 else "glin_bad_share"
 

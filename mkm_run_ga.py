@@ -14,6 +14,7 @@ from mkm_core import (
     load_mkm_from_las,
     resolve_path,
     save_mkm_plot,
+    scale_mkm_model_for_metrics,
     split_lithotype_intervals,
     validate_matrix_shape,
 )
@@ -197,8 +198,9 @@ def main() -> None:
     save_interval_matrices_npz(summary, interval_matrices_path)
     write_interval_results_csv(summary.interval_results, interval_csv_path)
 
+    mkm_plot = scale_mkm_model_for_metrics(summary.mkm_model)
     save_mkm_plot(
-        summary.mkm_model,
+        mkm_plot,
         plot_path,
         litho_raw=litho_raw,
         litho_mnem=args.litho,
@@ -207,7 +209,7 @@ def main() -> None:
 
     if args.save_mkm:
         save_mkm_path = resolve_path(args.save_mkm, project_root)
-        np.save(save_mkm_path, summary.mkm_model)
+        np.save(save_mkm_path, mkm_plot)
         print(f"Лучшая МКМ-модель сохранена в: {save_mkm_path}")
 
     print("\nИнтервальная GA-оптимизация завершена.")

@@ -20,6 +20,7 @@ from mkm_core import (  # noqa: E402
     load_mkm_from_las,
     resolve_path,
     save_mkm_plot,
+    scale_mkm_model_for_metrics,
     split_lithotype_intervals,
     validate_k_shape,
     validate_matrix_shape,
@@ -234,7 +235,7 @@ def main() -> None:
         )
 
     save_mkm_plot(
-        selected_summary.mkm_model,
+        scale_mkm_model_for_metrics(selected_summary.mkm_model),
         output_png_path,
         litho_raw=litho_raw,
         litho_mnem=args.litho,

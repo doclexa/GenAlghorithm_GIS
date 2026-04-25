@@ -17,6 +17,7 @@ from mkm_core import (
     load_mkm_from_las as load_data_from_las,
     resolve_path,
     save_mkm_plot,
+    scale_mkm_model_for_metrics,
     validate_matrix_shape,
 )
 from mkm_ga_engine import GAParams, optimize_mkm_with_ga
@@ -359,7 +360,12 @@ def main() -> None:
     best_glin_path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(best_coll_path, best_result.coll_matrix, fmt="%.12g")
     np.savetxt(best_glin_path, best_result.glin_matrix, fmt="%.12g")
-    save_mkm_plot(best_mkm, best_plot_path, litho_raw=litho_raw, litho_mnem="LITO")
+    save_mkm_plot(
+        scale_mkm_model_for_metrics(best_mkm),
+        best_plot_path,
+        litho_raw=litho_raw,
+        litho_mnem="LITO",
+    )
 
     if args.save_best_mkm:
         mkm_path = resolve_path(args.save_best_mkm, PROJECT_ROOT)
