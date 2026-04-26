@@ -1,5 +1,0 @@
-parameter,value,elapsed_sec,final_best_negative_share,global_best_negative_share,global_best_negative_count
-population_size,220.0,6.075529,0.0385969292,0.0385969292,1546
-cxpb,0.6,6.029274,0.0382973412,0.0382973412,1534
-mutpb,0.25,5.952238,0.0381725128,0.0381725128,1529
-tournsize,3.0,5.838946,0.0386718262,0.0386718262,1549

@@ -1,0 +1,22 @@
+﻿LAS: D:\Desktop\─шьыюь╠ру\ProjectMag\GenAlghorithm_GIS\data\las\skv621.las
+  уыєсшэр=DEPT, ышЄюыюуш =LITO, ётющёЄтр=('POTA', 'THOR', 'RHOB', 'WNKT')
+╤ЄрЁЄ шэЄхЁтры№эюую сЁєЄЇюЁёр ьрЄЁшЎ.
+╚эЄхЁтрыют ышЄюыюушш: 7 (ъюыыхъЄюЁ=3, уышэр=4)
+┬хёют√х ъю¤ЇЇшЎшхэЄ√: w_negative=0.8, w_glin=0.1, w_coll=0.1
+Splitting (a_k,  ўхщъш != 1): 5
+
+╚эЄхЁтры№э√щ сЁєЄЇюЁё чртхЁ°хэ.
+╤єььрЁэюх тЁхь  яхЁхсюЁр: 287.557 ёхъ
+┬ёхую шэЄхЁтрыют: 7
+┬ёхую юЎхэюъ: 2734375
+╤шэуєы Ёэ√ї ьрЄЁшЎ: 12
+╚Єюуют√щ Q score: 0.05492640
+
+╠хЄЁшъш ыєў°хщ ╠╩╠-ьюфхыш:
+1) ─юы  юЄЁшЎрЄхы№э√ї чэрўхэшщ: 0.06450000
+2) ─юы  уышэ, уфх ёєььр уышэ < 30%: 0.02364865
+3) ─юы  ъюыыхъЄюЁют, уфх ёєььр уышэ > 30%: 0.00961538
+
+╚эЄхЁтры№э√х ьрЄЁшЎ√ ёюїЁрэхэ√ т: D:\Desktop\─шьыюь╠ру\ProjectMag\GenAlghorithm_GIS\outputs\matrices\skv621_intervals_bf.npz
+╤тюфър яю шэЄхЁтрырь ёюїЁрэхэр т: D:\Desktop\─шьыюь╠ру\ProjectMag\GenAlghorithm_GIS\outputs\experiments\skv621_bf_interval_metrics.csv
+├ЁрЇшъ ыєў°хщ ╠╩╠-ьюфхыш ёюїЁрэхэ т: D:\Desktop\─шьыюь╠ру\ProjectMag\GenAlghorithm_GIS\outputs\plots\skv621_mkm_bf.png

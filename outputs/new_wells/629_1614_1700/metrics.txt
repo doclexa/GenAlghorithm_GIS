@@ -1,0 +1,34 @@
+well_stem: 629_1614_1700
+las: data\las_dop_wells\629_1614_1700.las
+weights: w_negative=0.8 w_glin=0.1 w_coll=0.1
+
+[bruteforce]
+  splitting: 4
+  quality_score Q: 0.0384522573
+  negative_share: 0.0196261682
+  glin_bad_share: 0.2275132275
+  coll_bad_share: 0.0000000000
+  time_sec: 36.073365
+  total_evals: 327680
+  total_invalid_count: 128
+  intervals: 5
+
+[ga]
+  population_size: 220
+  ngen_cap: 10000
+  cxpb: 0.6
+  mutpb: 0.25
+  indpb: 0.1
+  tournsize: 3
+  patience: 50
+  min_delta: 1e-07
+  n_jobs: 1
+  seed: 4
+  quality_score Q: 0.0338456213
+  negative_share: 0.0191588785
+  glin_bad_share: 0.1851851852
+  coll_bad_share: 0.0000000000
+  time_sec: 8.066166
+  total_evals: 58271
+  total_generations: 371
+  intervals: 5
