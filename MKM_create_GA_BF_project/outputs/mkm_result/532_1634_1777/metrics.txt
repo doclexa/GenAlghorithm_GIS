@@ -1,0 +1,34 @@
+well_stem: 532_1634_1777
+las: data\\las\\532_1634_1777.las
+weights: w_negative=0.8 w_glin=0.1 w_coll=0.1
+
+[bruteforce]
+  splitting: 4
+  quality_score Q: 0.0884227442
+  negative_share: 0.0601398601
+  glin_bad_share: 0.1658536585
+  coll_bad_share: 0.2372549020
+  time_sec: 86.203472
+  total_evals: 851968
+  total_invalid_count: 320
+  intervals: 13
+
+[ga]
+  population_size: 400
+  ngen_cap: 10000
+  cxpb: 0.8
+  mutpb: 0.1
+  indpb: 0.5
+  tournsize: 2
+  patience: 50
+  min_delta: 1e-07
+  n_jobs: 1
+  seed: 4
+  quality_score Q: 0.0879474939
+  negative_share: 0.0593006993
+  glin_bad_share: 0.1658536585
+  coll_bad_share: 0.2392156863
+  time_sec: 43.383310
+  total_evals: 258889
+  total_generations: 773
+  intervals: 13

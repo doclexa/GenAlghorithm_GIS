@@ -1,0 +1,2 @@
+well_name,n_points,n_intervals,depth_min,depth_max,dominant_class,dominant_thickness,points_csv,intervals_csv,column_png
+621_1700_1780,400,85,1699.90,1779.90,каолинит-гидрослюдистая легкая глина,21.40,outputs\final_lithology\621_1700_1780\621_1700_1780_final_lithology_points.csv,outputs\final_lithology\621_1700_1780\621_1700_1780_final_lithology_intervals.csv,outputs\final_lithology\621_1700_1780\621_1700_1780_final_lithology_column.png

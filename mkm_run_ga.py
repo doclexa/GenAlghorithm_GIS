@@ -66,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         nargs=4,
         metavar="MNEM",
         default=None,
-        help="Четыре кривые-свойства для МКМ (иначе автоматически: POTA THOR RHOB + четвёртая из типичного списка).",
+        help="Четыре кривые-свойства для МКМ (иначе по умолчанию: POTA THOR RHOB WNKT).",
     )
     parser.add_argument(
         "--config-dir",

@@ -20,18 +20,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 # Относительно PROJECT_ROOT; в CLI укажите `--las` для другой скважины.
 DEFAULT_LAS_RELPATH = "data/las/621_1700_1780.las"
 
-# Три «стандартные» кривые; четвёртая подбирается автоматически, если не задана явно.
-STANDARD_PROP_TRIPLE = ("POTA", "THOR", "RHOB")
-FOURTH_PROP_CANDIDATES = (
-    "TRNP",
-    "WNKT",
-    "NPHI",
-    "TNPH",
-    "NPOR",
-    "CACO",
-    "GR",
-    "CNP",
-)
+# Фиксированный набор четырёх кривых-свойств, если явно не задано --props.
+STANDARD_PROP_QUAD = ("POTA", "THOR", "RHOB", "WNKT")
 
 
 @dataclass(frozen=True)
@@ -101,19 +91,13 @@ def infer_property_mnemonics(
             )
         return props
 
-    missing_std = [m for m in STANDARD_PROP_TRIPLE if m not in keyset]
+    missing_std = [m for m in STANDARD_PROP_QUAD if m not in keyset]
     if missing_std:
         raise ValueError(
-            f"Автовыбор свойств: ожидаются {STANDARD_PROP_TRIPLE}. Не хватает: {missing_std}. "
+            f"Ожидаются кривые {STANDARD_PROP_QUAD}. Не хватает: {missing_std}. "
             f"Доступно: {sorted(keyset)}. Задайте явно: --props M1 M2 M3 M4"
         )
-    for cand in FOURTH_PROP_CANDIDATES:
-        if cand in keyset:
-            return (*STANDARD_PROP_TRIPLE, cand)
-    raise ValueError(
-        f"Не найдена четвёртая кривая из списка {FOURTH_PROP_CANDIDATES}. "
-        "Укажите явно: --props M1 M2 M3 M4"
-    )
+    return STANDARD_PROP_QUAD
 
 
 def load_mkm_from_las(

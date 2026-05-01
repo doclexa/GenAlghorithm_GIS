@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
         nargs=4,
         metavar="MNEM",
         default=None,
-        help="Четыре кривые-свойства (иначе автоподбор).",
+        help="Четыре кривые-свойства (иначе по умолчанию: POTA THOR RHOB WNKT).",
     )
     parser.add_argument(
         "--a-coll",

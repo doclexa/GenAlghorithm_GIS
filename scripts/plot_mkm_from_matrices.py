@@ -120,7 +120,7 @@ def parse_args() -> argparse.Namespace:
         nargs=4,
         metavar="MNEM",
         default=None,
-        help="Четыре кривые-свойства (иначе автоподбор как в mkm_run_ga).",
+        help="Четыре кривые-свойства (иначе по умолчанию: POTA THOR RHOB WNKT).",
     )
     p.add_argument("--title", default="", help="Заголовок рисунка (пусто = по умолчанию).")
     return p.parse_args()

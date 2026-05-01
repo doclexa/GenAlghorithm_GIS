@@ -332,7 +332,7 @@ def parse_args() -> argparse.Namespace:
         nargs=4,
         metavar="MNEM",
         default=None,
-        help="Четыре кривые-свойства для МКМ (опционально).",
+        help="Четыре кривые-свойства для МКМ (опционально; иначе POTA THOR RHOB WNKT).",
     )
     parser.add_argument("--config-dir", default="config", help="Каталог с границами матриц.")
     parser.add_argument("--a-min-coll", default="a_min_coll.in")

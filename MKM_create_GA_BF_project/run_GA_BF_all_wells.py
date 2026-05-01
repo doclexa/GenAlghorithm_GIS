@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
-"""Пакетный прогон интервального BF (splitting) и GA по каталогу .las (например data/las)."""
+
+"""Пакетный прогон интервального BF и GA по каталогу .las (например data/las) 
+для построения минерально-компонентной модели по комплексу ГИС в составе которого ядерные методы, СГК, ННК, ГК."""
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mkm_core import (  # noqa: E402
+from mkm_core import (  
     load_mkm_from_las,
     resolve_path,
     save_mkm_plot,
@@ -25,7 +26,7 @@ from mkm_core import (  # noqa: E402
     validate_k_shape,
     validate_matrix_shape,
 )
-from mkm_ga_engine import (  # noqa: E402
+from mkm_ga_engine import (  
     DEFAULT_GA_CXPB,
     DEFAULT_GA_INDPB,
     DEFAULT_GA_MUTPB,
@@ -34,7 +35,7 @@ from mkm_ga_engine import (  # noqa: E402
     DEFAULT_GA_TOURNSIZE,
     GAParams,
 )
-from mkm_interval_optimizer import (  # noqa: E402
+from mkm_interval_optimizer import (  
     IntervalOptimizationSummary,
     apply_k_splitting,
     run_interval_bruteforce,
@@ -45,11 +46,13 @@ from mkm_interval_optimizer import (  # noqa: E402
 
 
 def _discover_las_files(las_dir: Path) -> list[Path]:
+    """Возвращает список LAS-файлов в каталоге."""
     paths = sorted(las_dir.glob("*.las"))
     return [p for p in paths if p.is_file()]
 
 
 def _format_bf_section(*, bf_splitting: int, bf: IntervalOptimizationSummary) -> str:
+    """Формирует текстовую секцию [bruteforce] для файла metrics.txt."""
     lines = [
         "[bruteforce]",
         f"  splitting: {bf_splitting}",
@@ -66,6 +69,7 @@ def _format_bf_section(*, bf_splitting: int, bf: IntervalOptimizationSummary) ->
 
 
 def _format_ga_section(*, ga_params: GAParams, ga: IntervalOptimizationSummary) -> str:
+    """Формирует текстовую секцию [ga] для файла metrics.txt."""
     lines = [
         "[ga]",
         f"  population_size: {ga_params.population_size}",
@@ -102,6 +106,7 @@ def _format_metrics(
     ga_params: GAParams,
     ga: IntervalOptimizationSummary,
 ) -> str:
+    """Собирает полный текст metrics.txt: заголовок + BF + GA."""
     header = [
         f"well_stem: {stem}",
         f"las: {las_rel}",
@@ -143,9 +148,11 @@ def _process_one_well(
     opt_verbose: bool,
     ga_only: bool,
 ) -> None:
+    """Полный конвейер обработки одной скважины: загрузка, BF/GA, графики и метрики."""
     well_dir.mkdir(parents=True, exist_ok=True)
     props = prop_mnems
 
+    # 1) Чтение LAS и подготовка входной таблицы [depth, lithotype, 5 признаков].
     data, _is_c, _is_g, _cp, _gp, litho_raw = load_mkm_from_las(
         las_path,
         depth_mnem=depth,
@@ -166,6 +173,7 @@ def _process_one_well(
     validate_matrix_shape(a_max_glin, "A_max_glin")
 
     if not ga_only:
+        # Для BF используется дискретная сетка (a_k_*), которую можно "огрублять" параметром splitting.
         a_k_coll = np.loadtxt(config_dir / a_names["a_k_coll"])
         a_k_glin = np.loadtxt(config_dir / a_names["a_k_glin"])
         validate_k_shape(a_k_coll, "A_k_coll")
@@ -182,6 +190,7 @@ def _process_one_well(
     bf_summary: IntervalOptimizationSummary | None = None
     if not ga_only:
         print(f"\n=== BF: {stem} (splitting={splitting}) ===", flush=True)
+        # BF подбирает лучшую матрицу отдельно для каждого литотип-интервала.
         bf_summary = run_interval_bruteforce(
             data=data,
             intervals=intervals,
@@ -214,6 +223,7 @@ def _process_one_well(
         print(f"\n=== BF: {stem} — пропуск (--ga-only) ===", flush=True)
 
     print(f"\n=== GA: {stem} ===", flush=True)
+    # GA запускается по тем же интервалам и с теми же ограничениями a_min/a_max.
     ga_summary = run_interval_ga(
         data=data,
         intervals=intervals,
@@ -241,6 +251,7 @@ def _process_one_well(
         intervals=intervals,
     )
     plot_data_ga = well_dir / f"{stem}_mkm_ga_plot_data.npz"
+    # Этот .npz используется скриптом build_final_lithology_columns.py для финальной литоколонки.
     save_mkm_plot_data_npz(
         plot_data_ga,
         mkm_ga,
@@ -271,6 +282,7 @@ def _process_one_well(
 
 
 def parse_args() -> argparse.Namespace:
+    """Описывает CLI-аргументы пакетного запуска BF+GA."""
     p = argparse.ArgumentParser(
         description="BF (splitting) + GA по всем .las в каталоге; вывод в outputs/mkm_result/<stem>/."
     )
@@ -291,7 +303,7 @@ def parse_args() -> argparse.Namespace:
         nargs=4,
         metavar="MNEM",
         default=None,
-        help="Четыре кривые-свойства; иначе авто, как в mkm_run_bruteforce.",
+        help="Четыре кривые-свойства; иначе по умолчанию: POTA THOR RHOB WNKT.",
     )
     p.add_argument("--a-min-coll", default="a_min_coll.in")
     p.add_argument("--a-max-coll", default="a_max_coll.in")
@@ -339,6 +351,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Точка входа пакетной обработки всех скважин."""
     args = parse_args()
     project_root = (
         Path(args.project_root).resolve()

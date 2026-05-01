@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         nargs=4,
         metavar="MNEM",
         default=None,
-        help="Четыре кривые-свойства (иначе автоподбор после POTA THOR RHOB).",
+        help="Четыре кривые-свойства (иначе по умолчанию: POTA THOR RHOB WNKT).",
     )
     parser.add_argument("--config-dir", default="config", help="Каталог с a_*.in.")
 
