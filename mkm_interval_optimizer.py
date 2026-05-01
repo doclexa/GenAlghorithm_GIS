@@ -297,6 +297,34 @@ def _run_single_interval_ga(
     )
 
 
+def run_single_interval_ga(
+    interval: LithotypeInterval,
+    *,
+    a_min_coll: np.ndarray,
+    a_max_coll: np.ndarray,
+    a_min_glin: np.ndarray,
+    a_max_glin: np.ndarray,
+    w_negative: float,
+    w_glin: float,
+    w_coll: float,
+    ga_params: GAParams,
+    verbose: bool = False,
+) -> IntervalOptimizationResult:
+    """Публичная обёртка: один проход GA по одному литотип-интервалу (для экспериментальных sweep-ов)."""
+    return _run_single_interval_ga(
+        interval,
+        a_min_coll=a_min_coll,
+        a_max_coll=a_max_coll,
+        a_min_glin=a_min_glin,
+        a_max_glin=a_max_glin,
+        w_negative=w_negative,
+        w_glin=w_glin,
+        w_coll=w_coll,
+        ga_params=ga_params,
+        verbose=verbose,
+    )
+
+
 def _state_for_generation(
     generation_states: list[GroupGenerationState],
     generation: int,

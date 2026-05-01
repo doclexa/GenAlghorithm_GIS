@@ -1,0 +1,4 @@
+interval_id,lithotype,start_idx,end_idx,depth_start,depth_end,sample_count,method,local_score,negative_share,bad_metric_name,bad_share,elapsed_sec,evals,invalid_count,generations_ran
+0,2,0,157,1862.97,1894.17,157,ga,0.0,0.0,glin_bad_share,0.0,2.8534497999353334,18258,0,54
+1,1,157,199,1894.37,1902.57,42,ga,0.002380952380952381,0.0,coll_bad_share,0.023809523809523808,4.065249099978246,28793,0,87
+2,2,199,420,1902.77,1946.77,221,ga,0.007873303167420815,0.008144796380090498,glin_bad_share,0.013574660633484163,4.627263300004415,29143,0,87

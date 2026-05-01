@@ -24,7 +24,15 @@ from mkm_core import (  # noqa: E402
     validate_k_shape,
     validate_matrix_shape,
 )
-from mkm_ga_engine import GAParams  # noqa: E402
+from mkm_ga_engine import (  # noqa: E402
+    DEFAULT_GA_CXPB,
+    DEFAULT_GA_INDPB,
+    DEFAULT_GA_MUTPB,
+    DEFAULT_GA_PATIENCE,
+    DEFAULT_GA_POPULATION_SIZE,
+    DEFAULT_GA_TOURNSIZE,
+    GAParams,
+)
 from mkm_interval_optimizer import run_interval_bruteforce, run_interval_ga  # noqa: E402
 
 
@@ -137,13 +145,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-negative", type=float, default=0.8)
     parser.add_argument("--w-glin", type=float, default=0.1)
     parser.add_argument("--w-coll", type=float, default=0.1)
-    parser.add_argument("--population-size", type=int, default=220)
+    parser.add_argument("--population-size", type=int, default=DEFAULT_GA_POPULATION_SIZE)
     parser.add_argument("--ngen", type=int, default=110)
-    parser.add_argument("--cxpb", type=float, default=0.6)
-    parser.add_argument("--mutpb", type=float, default=0.25)
-    parser.add_argument("--indpb", type=float, default=0.1)
-    parser.add_argument("--tournsize", type=int, default=3)
-    parser.add_argument("--patience", type=int, default=25)
+    parser.add_argument("--cxpb", type=float, default=DEFAULT_GA_CXPB)
+    parser.add_argument("--mutpb", type=float, default=DEFAULT_GA_MUTPB)
+    parser.add_argument("--indpb", type=float, default=DEFAULT_GA_INDPB)
+    parser.add_argument("--tournsize", type=int, default=DEFAULT_GA_TOURNSIZE)
+    parser.add_argument("--patience", type=int, default=DEFAULT_GA_PATIENCE)
     parser.add_argument("--min-delta", type=float, default=1e-7)
     parser.add_argument("--seed", type=int, default=4)
     return parser.parse_args()

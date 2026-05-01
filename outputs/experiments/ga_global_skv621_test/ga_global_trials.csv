@@ -1,0 +1,2 @@
+trial_id,seed,sampler,population_size,ngen,cxpb,mutpb,indpb,tournsize,patience,min_delta,n_jobs,n_intervals,final_Q,total_time_sec,total_tested_matrices,negative_share,glin_bad_share,coll_bad_share
+1,2026,lhs,180,170,0.6102707805,0.2667252372,0.1251801602,5,60,2.2631137519e-08,1,7,0.0575128898,9.730616,63949,0.0690000000,0.0135135135,0.0096153846

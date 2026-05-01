@@ -17,7 +17,15 @@ from mkm_core import (
     split_lithotype_intervals,
     validate_matrix_shape,
 )
-from mkm_ga_engine import GAParams
+from mkm_ga_engine import (
+    DEFAULT_GA_CXPB,
+    DEFAULT_GA_INDPB,
+    DEFAULT_GA_MUTPB,
+    DEFAULT_GA_PATIENCE,
+    DEFAULT_GA_POPULATION_SIZE,
+    DEFAULT_GA_TOURNSIZE,
+    GAParams,
+)
 from mkm_interval_optimizer import (
     IntervalGenerationQualityPoint,
     run_interval_ga,
@@ -336,21 +344,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-glin", type=float, default=0.1)
     parser.add_argument("--w-coll", type=float, default=0.1)
 
-    parser.add_argument("--population-size", type=int, default=220)
+    parser.add_argument("--population-size", type=int, default=DEFAULT_GA_POPULATION_SIZE)
     parser.add_argument("--ngen", type=int, default=110)
-    parser.add_argument("--cxpb", type=float, default=0.6)
-    parser.add_argument("--mutpb", type=float, default=0.25)
-    parser.add_argument("--indpb", type=float, default=0.1)
-    parser.add_argument("--tournsize", type=int, default=3)
-    parser.add_argument("--patience", type=int, default=25)
+    parser.add_argument("--cxpb", type=float, default=DEFAULT_GA_CXPB)
+    parser.add_argument("--mutpb", type=float, default=DEFAULT_GA_MUTPB)
+    parser.add_argument("--indpb", type=float, default=DEFAULT_GA_INDPB)
+    parser.add_argument("--tournsize", type=int, default=DEFAULT_GA_TOURNSIZE)
+    parser.add_argument("--patience", type=int, default=DEFAULT_GA_PATIENCE)
     parser.add_argument("--min-delta", type=float, default=1e-7)
     parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--seed", type=int, default=2026)
 
-    parser.add_argument("--population-values", default="140,220,320,420")
-    parser.add_argument("--cxpb-values", default="0.4,0.55,0.7,0.85")
+    parser.add_argument("--population-values", default="140,220,320,400,420")
+    parser.add_argument("--cxpb-values", default="0.4,0.55,0.7,0.8,0.85")
     parser.add_argument("--mutpb-values", default="0.1,0.25,0.4,0.55")
-    parser.add_argument("--indpb-values", default="0.04,0.10,0.18,0.28")
+    parser.add_argument("--indpb-values", default="0.04,0.10,0.18,0.28,0.5")
     parser.add_argument("--tournsize-values", default="2,3,5,7")
     parser.add_argument("--ngen-values", default="60,110,170,240")
     parser.add_argument("--patience-values", default="0,10,25,50")

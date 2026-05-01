@@ -20,7 +20,16 @@ from mkm_core import (
     scale_mkm_model_for_metrics,
     validate_matrix_shape,
 )
-from mkm_ga_engine import GAParams, optimize_mkm_with_ga
+from mkm_ga_engine import (
+    DEFAULT_GA_CXPB,
+    DEFAULT_GA_INDPB,
+    DEFAULT_GA_MUTPB,
+    DEFAULT_GA_PATIENCE,
+    DEFAULT_GA_POPULATION_SIZE,
+    DEFAULT_GA_TOURNSIZE,
+    GAParams,
+    optimize_mkm_with_ga,
+)
 
 
 @dataclass
@@ -55,13 +64,13 @@ def sample_ga_params(
     n_jobs: int,
 ) -> GAParams:
     return GAParams(
-        population_size=rng.choice([140, 180, 220, 280, 340, 420]),
+        population_size=rng.choice([140, 180, 220, 280, 340, 400, 420]),
         ngen=rng.choice([70, 90, 110, 140, 180, 220]),
-        cxpb=rng.choice([0.5, 0.6, 0.7]),
-        mutpb=rng.choice([0.2, 0.25, 0.3, 0.35]),
-        indpb=rng.choice([0.06, 0.08, 0.1, 0.12, 0.15]),
+        cxpb=rng.choice([0.5, 0.6, 0.7, DEFAULT_GA_CXPB]),
+        mutpb=rng.choice([0.1, 0.2, 0.25, 0.3, 0.35]),
+        indpb=rng.choice([0.06, 0.08, 0.1, 0.12, 0.15, DEFAULT_GA_INDPB]),
         tournsize=rng.choice([2, 3, 4]),
-        patience=rng.choice([18, 25, 35, 45, 60]),
+        patience=rng.choice([18, 25, 35, 45, 50, 60]),
         min_delta=rng.choice([1e-6, 1e-7]),
         n_jobs=max(1, n_jobs),
         seed=rng.randint(1, 1_000_000),
@@ -212,13 +221,13 @@ def main() -> None:
     tuning_start = time.perf_counter()
 
     baseline_config = GAParams(
-        population_size=220,
+        population_size=DEFAULT_GA_POPULATION_SIZE,
         ngen=110,
-        cxpb=0.6,
-        mutpb=0.25,
-        indpb=0.1,
-        tournsize=3,
-        patience=25,
+        cxpb=DEFAULT_GA_CXPB,
+        mutpb=DEFAULT_GA_MUTPB,
+        indpb=DEFAULT_GA_INDPB,
+        tournsize=DEFAULT_GA_TOURNSIZE,
+        patience=DEFAULT_GA_PATIENCE,
         min_delta=1e-7,
         n_jobs=max(1, args.n_jobs),
         seed=args.seed,

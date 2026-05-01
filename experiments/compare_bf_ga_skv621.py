@@ -23,7 +23,15 @@ from mkm_core import (  # noqa: E402
     validate_k_shape,
     validate_matrix_shape,
 )
-from mkm_ga_engine import GAParams  # noqa: E402
+from mkm_ga_engine import (  # noqa: E402
+    DEFAULT_GA_CXPB,
+    DEFAULT_GA_INDPB,
+    DEFAULT_GA_MUTPB,
+    DEFAULT_GA_PATIENCE,
+    DEFAULT_GA_POPULATION_SIZE,
+    DEFAULT_GA_TOURNSIZE,
+    GAParams,
+)
 from mkm_interval_optimizer import (  # noqa: E402
     IntervalOptimizationResult,
     IntervalOptimizationSummary,
@@ -136,13 +144,13 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Дополнительный лимит итераций на интервал для coarse BF (0 = без лимита).",
     )
-    p.add_argument("--population-size", type=int, default=220)
+    p.add_argument("--population-size", type=int, default=DEFAULT_GA_POPULATION_SIZE)
     p.add_argument("--ngen", type=int, default=110)
-    p.add_argument("--cxpb", type=float, default=0.6)
-    p.add_argument("--mutpb", type=float, default=0.25)
-    p.add_argument("--indpb", type=float, default=0.1)
-    p.add_argument("--tournsize", type=int, default=3)
-    p.add_argument("--patience", type=int, default=25)
+    p.add_argument("--cxpb", type=float, default=DEFAULT_GA_CXPB)
+    p.add_argument("--mutpb", type=float, default=DEFAULT_GA_MUTPB)
+    p.add_argument("--indpb", type=float, default=DEFAULT_GA_INDPB)
+    p.add_argument("--tournsize", type=int, default=DEFAULT_GA_TOURNSIZE)
+    p.add_argument("--patience", type=int, default=DEFAULT_GA_PATIENCE)
     p.add_argument("--min-delta", type=float, default=1e-7)
     p.add_argument("--seed", type=int, default=4)
     return p.parse_args()

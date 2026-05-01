@@ -24,6 +24,8 @@
 - `tune_mkm_gen_hyperparams.py` — случайный поиск гиперпараметров GA с критериями по времени и качеству относительно baseline; сохраняет отчет trial-ов, лучшие матрицы и график лучшей модели.
 - `analyze_ga_hyperparams.py` — sweep по гиперпараметрам GA (population/cxpb/mutpb/tournsize/indpb) для классического (не интервального) сценария; сохраняет кривые, summary CSV и графики влияния.
 - `study_interval_ga_hyperparams.py` — строгий sweep гиперпараметров именно для интервального GA; строит кривые `Q` по поколениям, summary CSV, поддерживает режим `--plot-only`.
+- `experiments/ga_hyperparam_global_study.py` — глобальный LHS/random по пространству `GAParams`, `run_interval_ga` на одной скважине; только boxplot по квантилям; см. `--plot-only`.
+- `experiments/ga_hyperparam_interval_oat_v2.py` — v2: OAT по сетке с фиксированным шагом; baseline остальных HP; GA по каждому интервалу на каждый узел сетки; boxplot распределений `local_score`; `oat_v2_{P}_detail.csv`, редактируемый `oat_v2_{P}_boxplot_summary.csv`; `--render-only`, `--from-summary`.
 
 ## Скрипты визуализации и утилиты графиков
 

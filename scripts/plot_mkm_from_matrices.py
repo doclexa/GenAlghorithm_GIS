@@ -6,7 +6,7 @@
 
 Запуск из корня GenAlghorithm_GIS:
   python scripts/plot_mkm_from_matrices.py
-  python scripts/plot_mkm_from_matrices.py --las data/las/skv621.las \\
+  python scripts/plot_mkm_from_matrices.py --las data/las/621_1700_1780.las \\
     --matrix-coll outputs/matrices/matrix_coll_answer.out \\
     --matrix-glin outputs/matrices/matrix_glina_answer.out \\
     --output outputs/plots/mkm_answer_depth.png

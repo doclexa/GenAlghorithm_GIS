@@ -75,6 +75,15 @@ class GAParams:
     seed: int | None
 
 
+# Единые значения по умолчанию для CLI и интервальных скриптов (размер популяции и операторы GA).
+DEFAULT_GA_POPULATION_SIZE: int = 400
+DEFAULT_GA_CXPB: float = 0.8
+DEFAULT_GA_MUTPB: float = 0.1
+DEFAULT_GA_INDPB: float = 0.5
+DEFAULT_GA_TOURNSIZE: int = 2
+DEFAULT_GA_PATIENCE: int = 50
+
+
 @dataclass
 class GroupGenerationState:
     generation: int

@@ -17,7 +17,7 @@ from scale import scale_pos_neg_unit_sums_rows
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Относительно PROJECT_ROOT; в CLI укажите `--las` для другой скважины.
-DEFAULT_LAS_RELPATH = "data/las/skv621.las"
+DEFAULT_LAS_RELPATH = "data/las/621_1700_1780.las"
 
 # Три «стандартные» кривые; четвёртая подбирается автоматически, если не задана явно.
 STANDARD_PROP_TRIPLE = ("POTA", "THOR", "RHOB")

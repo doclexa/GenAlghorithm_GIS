@@ -25,11 +25,16 @@ from mkm_core import (
     resolve_path,
     validate_matrix_shape,
 )
+from mkm_ga_engine import (
+    DEFAULT_GA_CXPB,
+    DEFAULT_GA_INDPB,
+    DEFAULT_GA_MUTPB,
+    DEFAULT_GA_POPULATION_SIZE,
+    DEFAULT_GA_TOURNSIZE,
+)
 from scale import scale_pos_neg_unit_sums_rows
 
 SINGULAR_PENALTY = 1.0e6
-
-
 @dataclass
 class GAStudyConfig:
     population_size: int
@@ -459,18 +464,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--a-max-glin", default="config/a_max_glin.in", help="Путь к a_max_glin.in.")
 
     parser.add_argument("--ngen", type=int, default=200, help="Число поколений в каждом эксперименте.")
-    parser.add_argument("--indpb", type=float, default=0.1, help="Вероятность мутации гена.")
+    parser.add_argument("--indpb", type=float, default=DEFAULT_GA_INDPB, help="Вероятность мутации гена.")
     parser.add_argument("--seed", type=int, default=2026, help="Базовый seed.")
     parser.add_argument("--n-jobs", type=int, default=1, help="Параллельные процессы для fitness (1 = без параллели).")
 
-    parser.add_argument("--base-population-size", type=int, default=220, help="Базовый размер популяции.")
-    parser.add_argument("--base-cxpb", type=float, default=0.6, help="Базовая вероятность скрещивания.")
-    parser.add_argument("--base-mutpb", type=float, default=0.25, help="Базовая вероятность мутации особи.")
-    parser.add_argument("--base-tournsize", type=int, default=3, help="Базовый tournament size.")
+    parser.add_argument("--base-population-size", type=int, default=DEFAULT_GA_POPULATION_SIZE, help="Базовый размер популяции.")
+    parser.add_argument("--base-cxpb", type=float, default=DEFAULT_GA_CXPB, help="Базовая вероятность скрещивания.")
+    parser.add_argument("--base-mutpb", type=float, default=DEFAULT_GA_MUTPB, help="Базовая вероятность мутации особи.")
+    parser.add_argument("--base-tournsize", type=int, default=DEFAULT_GA_TOURNSIZE, help="Базовый tournament size.")
 
-    parser.add_argument("--population-values", default="140,220,280,340", help="Список population_size через запятую.")
-    parser.add_argument("--cxpb-values", default="0.5,0.6,0.7", help="Список cxpb через запятую.")
-    parser.add_argument("--mutpb-values", default="0.2,0.25,0.3,0.35", help="Список mutpb через запятую.")
+    parser.add_argument("--population-values", default="140,220,280,340,400", help="Список population_size через запятую.")
+    parser.add_argument("--cxpb-values", default="0.5,0.6,0.7,0.8", help="Список cxpb через запятую.")
+    parser.add_argument("--mutpb-values", default="0.1,0.2,0.25,0.3,0.35", help="Список mutpb через запятую.")
     parser.add_argument("--tournsize-values", default="2,3,4", help="Список tournsize через запятую.")
 
     parser.add_argument(
@@ -483,7 +488,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-coll", type=float, default=0.3, help="Вес метрики коллекторов в Q.")
     parser.add_argument(
         "--indpb-values",
-        default="0.06,0.1,0.14",
+        default="0.06,0.1,0.14,0.5",
         help="Список indpb для дополнительного прохода (через запятую). Пусто = пропустить.",
     )
     parser.add_argument(
