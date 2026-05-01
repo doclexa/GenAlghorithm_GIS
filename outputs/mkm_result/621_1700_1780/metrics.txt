@@ -1,5 +1,5 @@
 well_stem: 621_1700_1780
-las: data\las\621_1700_1780.las
+las: data\\las\\621_1700_1780.las
 weights: w_negative=0.8 w_glin=0.1 w_coll=0.1
 [bruteforce]
   splitting: 4

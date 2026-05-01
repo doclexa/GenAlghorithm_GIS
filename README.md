@@ -54,8 +54,40 @@ python scripts/mkm_bruteforce.py
 - `python tune_mkm_gen_hyperparams.py` — случайный поиск настроек GA.
 - `python experiments/compare_bf_ga_skv621.py --all` — бенчмарк GA / полный BF / BF с бюджетом оценок + устойчивость к сдвигу границ; затем `python experiments/plot_experiment_results.py --input-dir outputs/experiments/skv621_bf_ga`.
 - `python experiments/plot_tune_tradeoff.py --csv outputs/mkm_gen_tuning_report.csv` — scatter время vs Q по результатам тюнера.
+- `python scripts/build_final_lithology_columns.py --input-root outputs/mkm_result --output-root outputs/final_lithology` — постобработка `*_mkm_ga_plot_data.npz` в финальную литологическую модель по глубине (CSV интервалов/точек + PNG-колонки по каждой скважине + общий обзор).
 
 **Веса по умолчанию** у `mkm_run_bruteforce.py` и `mkm_run_ga.py` согласованы: `w_negative=0.7`, `w_glin=0.3`, `w_coll=0.3`. У bruteforce есть флаг `--quiet` (без печати каждой итерации).
+
+## Финальная литологическая модель (post-processing)
+
+Скрипт `scripts/build_final_lithology_columns.py` читает предрасчитанные файлы:
+
+- `outputs/mkm_result/*/*_mkm_ga_plot_data.npz`
+
+и строит финальную литологическую интерпретацию по глубине:
+
+- очистка компонент (`< 0` → `0`);
+- нормализация литотипа (`1` = коллектор, любое другое значение = покрышка);
+- классификация пород по долям глин / кварца / полевого шпата и пористости;
+- экспорт интервалов и красивых литологических колонок.
+
+### How to run locally
+
+Из корня проекта:
+
+```bash
+python scripts/build_final_lithology_columns.py \
+  --input-root outputs/mkm_result \
+  --output-root outputs/final_lithology
+```
+
+Для подмножества скважин:
+
+```bash
+python scripts/build_final_lithology_columns.py \
+  --only 621_1700_1780 622_1612_1696
+```
+
 
 ## Метрики качества МКМ
 
