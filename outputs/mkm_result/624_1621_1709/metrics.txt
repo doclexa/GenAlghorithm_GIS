@@ -28,7 +28,7 @@ weights: w_negative=0.8 w_glin=0.1 w_coll=0.1
   negative_share: 0.0113122172
   glin_bad_share: 0.1081081081
   coll_bad_share: 0.0045454545
-  time_sec: 27.275594
+  time_sec: 32.116342
   total_evals: 197473
   total_generations: 592
   intervals: 8

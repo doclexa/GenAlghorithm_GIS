@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -407,6 +408,66 @@ def save_mkm_plot(
     output_png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_png_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
+
+
+def save_mkm_plot_data_npz(
+    output_npz_path: Path,
+    mkm_model: np.ndarray,
+    *,
+    litho_raw: np.ndarray | None = None,
+    litho_mnem: str = "LITO",
+    intervals: Sequence[LithotypeInterval] | None = None,
+) -> None:
+    """Сохраняет числовые ряды, из которых строится `save_mkm_plot` (для постобработки / других инструментов).
+
+    Файл .npz (compress): одна скважина — один архив.
+    - mkm_model: float64, форма (N, 7) — те же данные, что на графике: [:,0] глубина, [:,1] код литотипа,
+      [:,2:] пять компонент после `scale_mkm_model_for_metrics` (Глина1 … Пористость).
+    - litho_las: опционально, сырой LITO из LAS, длина N (если был передан litho_raw).
+    - interval_axhline_depth: глубины горизонтальных линий между интервалами (как в `save_mkm_plot`, без первого).
+    - meta_json_utf8: JSON с полями version, litho_mnem, mkm_column_keys (имена столбцов mkm_model).
+
+    Чтение: ``d = np.load(path); meta = json.loads(d['meta_json_utf8'].tobytes().decode('utf-8'))``
+    """
+    mkm_f = np.asarray(mkm_model, dtype=np.float64)
+    if mkm_f.ndim != 2 or mkm_f.shape[1] != 7:
+        raise ValueError(f"mkm_model ожидается (N, 7), сейчас: {mkm_f.shape}")
+
+    meta = {
+        "version": 1,
+        "litho_mnem": litho_mnem,
+        "mkm_column_keys": [
+            "depth",
+            "lithotype_code",
+            "glin1",
+            "glin2",
+            "psh",
+            "quartz",
+            "porosity",
+        ],
+    }
+    meta_bytes = json.dumps(meta, ensure_ascii=False).encode("utf-8")
+    meta_arr = np.frombuffer(meta_bytes, dtype=np.uint8)
+
+    if intervals is not None:
+        axh = np.array([float(iv.depth_start) for iv in intervals[1:]], dtype=np.float64)
+    else:
+        axh = np.zeros((0,), dtype=np.float64)
+
+    output_npz_path.parent.mkdir(parents=True, exist_ok=True)
+    save_kw: dict[str, np.ndarray] = {
+        "mkm_model": mkm_f,
+        "interval_axhline_depth": axh,
+        "meta_json_utf8": meta_arr,
+    }
+    if litho_raw is not None:
+        lr = np.asarray(litho_raw)
+        if lr.shape[0] != mkm_f.shape[0]:
+            raise ValueError(
+                f"litho_raw: длина {lr.shape[0]}, для mkm_model ожидается {mkm_f.shape[0]}"
+            )
+        save_kw["litho_las"] = lr.astype(np.float64, copy=False)
+    np.savez_compressed(output_npz_path, **save_kw)
 
 
 def validate_matrix_shape(matrix: np.ndarray, matrix_name: str) -> None:

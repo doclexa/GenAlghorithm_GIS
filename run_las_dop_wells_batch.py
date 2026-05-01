@@ -19,6 +19,7 @@ from mkm_core import (  # noqa: E402
     load_mkm_from_las,
     resolve_path,
     save_mkm_plot,
+    save_mkm_plot_data_npz,
     scale_mkm_model_for_metrics,
     split_lithotype_intervals,
     validate_k_shape,
@@ -235,6 +236,14 @@ def _process_one_well(
     save_mkm_plot(
         mkm_ga,
         plot_ga,
+        litho_raw=litho_raw,
+        litho_mnem=litho,
+        intervals=intervals,
+    )
+    plot_data_ga = well_dir / f"{stem}_mkm_ga_plot_data.npz"
+    save_mkm_plot_data_npz(
+        plot_data_ga,
+        mkm_ga,
         litho_raw=litho_raw,
         litho_mnem=litho,
         intervals=intervals,
